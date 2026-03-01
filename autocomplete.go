@@ -131,17 +131,38 @@ func (m *model) updateSuggestions() {
 
 	case strings.ToLower(tokens[0]) == "/dm" || strings.ToLower(tokens[0]) == "/invite":
 		// "/dm <partial>" or "/invite <partial>" → filter contact display names
+		// and group member names from the current chat.
 		if (len(tokens) == 1 && trailingSpace) || (len(tokens) == 2 && !trailingSpace) {
 			partial := ""
 			if len(tokens) == 2 {
 				partial = strings.ToLower(tokens[1])
 			}
+			seen := make(map[string]bool)
+			// Existing DM contacts from sidebar.
 			for _, it := range m.sidebar {
 				if di, ok := it.(DMItem); ok {
 					name := di.Name
+					if seen[strings.ToLower(name)] {
+						continue
+					}
 					if partial == "" || (strings.HasPrefix(strings.ToLower(name), partial) && !strings.EqualFold(name, partial)) {
 						suggestions = append(suggestions, name)
+						seen[strings.ToLower(name)] = true
 					}
+				}
+			}
+			// Authors from the current chat (group/channel members).
+			for _, pk := range m.currentChatAuthors() {
+				if pk == m.keys.PK.Hex() {
+					continue
+				}
+				name := m.resolveAuthor(pk)
+				if seen[strings.ToLower(name)] {
+					continue
+				}
+				if partial == "" || (strings.HasPrefix(strings.ToLower(name), partial) && !strings.EqualFold(name, partial)) {
+					suggestions = append(suggestions, name)
+					seen[strings.ToLower(name)] = true
 				}
 			}
 		}
