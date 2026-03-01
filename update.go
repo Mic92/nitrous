@@ -298,7 +298,7 @@ func (m *model) handleDMEvent(msg dmEventMsg) (tea.Model, tea.Cmd) {
 	if profileCmd := m.maybeRequestProfile(peer); profileCmd != nil {
 		batchCmds = append(batchCmds, profileCmd)
 	}
-	if newPeer {
+	if newPeer && m.nip51Loaded {
 		batchCmds = append(batchCmds, publishContactsListCmd(m.pool, m.relays, contactsFromModel(m.allDMPeers(), m.profiles), m.keys, m.kr))
 	}
 	if m.dmEvents != nil {
@@ -507,7 +507,10 @@ func (m *model) handleProfileResolved(msg profileResolvedMsg) (tea.Model, tea.Cm
 	if m.containsDMPeer(msg.PubKey) {
 		m.updateDMItemName(msg.PubKey, msg.DisplayName)
 		m.updateViewport()
-		return m, publishContactsListCmd(m.pool, m.relays, contactsFromModel(m.allDMPeers(), m.profiles), m.keys, m.kr)
+		if m.nip51Loaded {
+			return m, publishContactsListCmd(m.pool, m.relays, contactsFromModel(m.allDMPeers(), m.profiles), m.keys, m.kr)
+		}
+		return m, nil
 	}
 	m.updateViewport()
 	return m, nil
