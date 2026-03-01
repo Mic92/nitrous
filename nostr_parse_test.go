@@ -15,9 +15,9 @@ func TestParseProfileMeta(t *testing.T) {
 		want    string
 	}{
 		{
-			name:    "prefers display_name",
+			name:    "prefers name",
 			content: `{"name":"alice","display_name":"Alice Wonderland"}`,
-			want:    "Alice Wonderland",
+			want:    "alice",
 		},
 		{
 			name:    "falls back to name",
@@ -52,7 +52,7 @@ func TestParseProfileMeta(t *testing.T) {
 		{
 			name:    "extra fields ignored",
 			content: `{"name":"dave","display_name":"Dave","about":"developer","picture":"https://example.com/dave.png"}`,
-			want:    "Dave",
+			want:    "dave",
 		},
 	}
 

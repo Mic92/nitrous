@@ -237,7 +237,7 @@ func resolveNIP05Cmd(identifier string) tea.Cmd {
 }
 
 // parseProfileMeta extracts a display name from a kind-0 profile JSON content string.
-// Prefers display_name, falls back to name, then returns empty string.
+// Prefers name, falls back to display_name, then returns empty string.
 func parseProfileMeta(content string) string {
 	var meta struct {
 		Name        string `json:"name"`
@@ -246,10 +246,10 @@ func parseProfileMeta(content string) string {
 	if err := json.Unmarshal([]byte(content), &meta); err != nil {
 		return ""
 	}
-	if meta.DisplayName != "" {
-		return meta.DisplayName
+	if meta.Name != "" {
+		return meta.Name
 	}
-	return meta.Name
+	return meta.DisplayName
 }
 
 // drainPublish drains the PublishMany result channel with context awareness,
