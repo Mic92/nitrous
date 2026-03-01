@@ -112,12 +112,19 @@ func loadLogHistory(logDir, roomType, roomKey string, maxMessages int) ([]ChatMe
 		return nil, fmt.Errorf("logging: read %s: %w", path, err)
 	}
 
+	seen := make(map[string]bool, len(lines))
 	msgs := make([]ChatMessage, 0, len(lines))
 	for _, line := range lines {
 		msg, err := parseLogLine(line)
 		if err != nil {
 			log.Printf("logging: skipping malformed line in %s: %v", path, err)
 			continue
+		}
+		if msg.EventID != "" && seen[msg.EventID] {
+			continue
+		}
+		if msg.EventID != "" {
+			seen[msg.EventID] = true
 		}
 		msgs = append(msgs, msg)
 	}

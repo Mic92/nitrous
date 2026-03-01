@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -110,7 +111,7 @@ func TestLoadMaxMessages(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		msg := ChatMessage{
 			Timestamp: nostr.Timestamp(1700000000 + int64(i)),
-			EventID:   "abcdef0012345678",
+			EventID:   fmt.Sprintf("abcdef00123456%02d", i),
 			PubKey:    "1234567890abcdef",
 			Author:    "user",
 			Content:   "message",
@@ -146,7 +147,7 @@ func TestLoadLargeFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 0; i < 100000; i++ {
-		_, _ = f.WriteString("2024-01-15 10:30:45\tabcdef00\t12345678\tuser\tmessage number " + filepath.Base(dir) + "\n")
+		_, _ = fmt.Fprintf(f, "2024-01-15 10:30:45\tabcdef%06d\t12345678\tuser\tmessage number %s\n", i, filepath.Base(dir))
 	}
 	_ = f.Close()
 
