@@ -109,6 +109,7 @@ type model struct {
 	contactsListTS nostr.Timestamp
 	channelsListTS nostr.Timestamp
 	groupsListTS   nostr.Timestamp
+	nip51Loaded    bool // true after the initial NIP-51 fetch completes
 
 	// Logging
 	logDir string // empty = logging disabled

@@ -419,7 +419,9 @@ func (m *model) handleGroupMeta(msg groupMetaMsg) (tea.Model, tea.Cmd) {
 	}
 	m.updateViewport()
 	var metaCmds []tea.Cmd
-	metaCmds = append(metaCmds, publishSimpleGroupsListCmd(m.pool, m.relays, m.allGroups(), m.keys))
+	if m.nip51Loaded {
+		metaCmds = append(metaCmds, publishSimpleGroupsListCmd(m.pool, m.relays, m.allGroups(), m.keys))
+	}
 	// Only re-wait if this metadata came from the group subscription;
 	// edit commands also return groupMetaMsg but must not spawn extra waiters.
 	if msg.FromSub {
@@ -615,6 +617,8 @@ func (m *model) handleNIP51ListsFetched(msg nip51ListsFetchedMsg) (tea.Model, te
 			fetchCmds = append(fetchCmds, fetchGroupMetaCmd(m.pool, sg.RelayURL, sg.GroupID))
 		}
 	}
+
+	m.nip51Loaded = true
 
 	// Clamp activeItem to valid range after list replacement.
 	total := m.sidebarTotal()
