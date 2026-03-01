@@ -348,6 +348,22 @@ func (m *model) maybeRequestProfile(pubkey string) tea.Cmd {
 	return fetchProfileCmd(m.pool, m.relays, pubkey)
 }
 
+// pubkeyByName returns the hex pubkey for a display name, searching the profiles map.
+// Returns empty string if no match or ambiguous.
+func (m *model) pubkeyByName(name string) string {
+	lower := strings.ToLower(name)
+	var match string
+	for pk, n := range m.profiles {
+		if strings.ToLower(n) == lower {
+			if match != "" {
+				return "" // ambiguous
+			}
+			match = pk
+		}
+	}
+	return match
+}
+
 // syncInputHeight resizes the textarea to match its content and re-layouts if needed.
 // Handles shrinking (e.g. backspace joining lines) and any growth not caught by pre-grow.
 func (m *model) syncInputHeight() {

@@ -473,6 +473,13 @@ func (m *model) openDM(input string) (tea.Model, tea.Cmd) {
 		pk = decoded.(nostr.PubKey).Hex()
 	}
 
+	// If input isn't a valid hex pubkey or npub, try to resolve it as a display name.
+	if len(pk) != 64 {
+		if resolved := m.pubkeyByName(input); resolved != "" {
+			pk = resolved
+		}
+	}
+
 	newPeer := false
 	if !m.containsDMPeer(pk) {
 		newPeer = true
