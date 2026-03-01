@@ -389,21 +389,31 @@ func appendMessage(msgs []ChatMessage, msg ChatMessage, maxMessages int) []ChatM
 }
 
 // loadHistory loads message history from a log file and marks event IDs as seen.
-func (m *model) loadHistory(roomType, roomKey string) {
+// It returns the set of unique author pubkeys found so profiles can be fetched.
+func (m *model) loadHistory(roomType, roomKey string) []string {
 	msgs, err := loadLogHistory(m.logDir, roomType, roomKey, m.cfg.MaxMessages)
 	if err != nil {
 		log.Printf("loadHistory: %v", err)
-		return
+		return nil
 	}
+	seen := make(map[string]bool)
 	for _, msg := range msgs {
 		if msg.EventID != "" {
 			m.markSeenEvent(msg.EventID)
 		}
 		m.msgs[roomKey] = appendMessage(m.msgs[roomKey], msg, m.cfg.MaxMessages)
+		if msg.PubKey != "" {
+			seen[msg.PubKey] = true
+		}
 	}
 	if len(msgs) > 0 {
 		log.Printf("loadHistory: loaded %d messages for %s/%s", len(msgs), roomType, roomKey)
 	}
+	var authors []string
+	for pk := range seen {
+		authors = append(authors, pk)
+	}
+	return authors
 }
 
 // renderQR renders a QR code with a title line above it.

@@ -182,10 +182,16 @@ func (m *model) handleChannelSubStarted(msg channelSubStartedMsg) (tea.Model, te
 	sub := &roomSub{kind: SidebarChannel, roomID: msg.channelID, events: msg.events, cancel: msg.cancel}
 	m.roomSubs[msg.channelID] = sub
 	// Load log history if no messages are loaded yet.
+	var profileCmds []tea.Cmd
 	if len(m.msgs[msg.channelID]) == 0 {
-		m.loadHistory("channel", msg.channelID)
+		for _, pk := range m.loadHistory("channel", msg.channelID) {
+			if cmd := m.maybeRequestProfile(pk); cmd != nil {
+				profileCmds = append(profileCmds, cmd)
+			}
+		}
 	}
-	return m, waitForRoomSub(sub, m.keys)
+	profileCmds = append(profileCmds, waitForRoomSub(sub, m.keys))
+	return m, tea.Batch(profileCmds...)
 }
 
 func (m *model) handleDMSubStarted(msg dmSubStartedMsg) (tea.Model, tea.Cmd) {
@@ -348,10 +354,16 @@ func (m *model) handleGroupSubStarted(msg groupSubStartedMsg) (tea.Model, tea.Cm
 		m.groupRecentIDs[msg.groupKey] = nil
 	}
 	// Load log history if no messages are loaded yet.
+	var profileCmds []tea.Cmd
 	if len(m.msgs[msg.groupKey]) == 0 {
-		m.loadHistory("group", msg.groupKey)
+		for _, pk := range m.loadHistory("group", msg.groupKey) {
+			if cmd := m.maybeRequestProfile(pk); cmd != nil {
+				profileCmds = append(profileCmds, cmd)
+			}
+		}
 	}
-	return m, waitForRoomSub(sub, m.keys)
+	profileCmds = append(profileCmds, waitForRoomSub(sub, m.keys))
+	return m, tea.Batch(profileCmds...)
 }
 
 func (m *model) handleGroupEvent(msg groupEventMsg) (tea.Model, tea.Cmd) {
