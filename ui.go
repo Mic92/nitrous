@@ -8,67 +8,180 @@ import (
 	"github.com/muesli/termenv"
 )
 
-// Colors
-var (
-	colorPrimary   = lipgloss.Color("#7B68EE")
-	colorSecondary = lipgloss.Color("#5B5682")
-	colorMuted     = lipgloss.Color("#636363")
-	colorHighlight = lipgloss.Color("#E0DAFF")
-	colorStatusBg  = lipgloss.Color("#24283B")
-	colorWhite     = lipgloss.Color("#C0CAF5")
-	colorGreen     = lipgloss.Color("#9ECE6A")
-)
+// Theme bundles all colour values and pre-built lipgloss styles for the UI.
+// A single Theme instance is stored on the model and threaded through all
+// rendering code, replacing the former package-level style variables.
+type Theme struct {
+	// Colour roles
+	Primary   lipgloss.Color
+	Secondary lipgloss.Color
+	Muted     lipgloss.Color
+	Highlight lipgloss.Color
+	StatusBg  lipgloss.Color
+	Text      lipgloss.Color
+	Success   lipgloss.Color
 
-// Distinct author colors — chosen for readability on dark backgrounds.
-var authorColorsDark = []lipgloss.Color{
-	"#7B68EE", // medium slate blue
-	"#FF6B6B", // coral red
-	"#4ECDC4", // teal
-	"#FFD93D", // gold
-	"#C084FC", // violet
-	"#FF8C42", // orange
-	"#6BCB77", // green
-	"#4D96FF", // blue
-	"#FF6EC7", // hot pink
-	"#00D2FF", // cyan
-	"#E879F9", // fuchsia
-	"#A3E635", // lime
+	// Pre-built styles
+	Sidebar         lipgloss.Style
+	SidebarItem     lipgloss.Style
+	SidebarUnread   lipgloss.Style
+	SidebarSelected lipgloss.Style
+	SidebarSection  lipgloss.Style
+	ChatAuthor      lipgloss.Style
+	ChatOwnAuthor   lipgloss.Style
+	ChatTimestamp   lipgloss.Style
+	StatusBar       lipgloss.Style
+	StatusConnected lipgloss.Style
+	ChatSystem      lipgloss.Style
+	QRTitle         lipgloss.Style
+	ACSuggestion    lipgloss.Style
+	ACSelected      lipgloss.Style
+	Selection       lipgloss.Style
+
+	// Author colour palette for per-pubkey colouring.
+	AuthorColors []lipgloss.Color
+
+	// Glamour markdown renderer style ("dark" or "light").
+	GlamourStyle string
 }
 
-// Distinct author colors — chosen for readability on light backgrounds.
-var authorColorsLight = []lipgloss.Color{
-	"#4B38AE", // deep slate blue
-	"#C0392B", // dark red
-	"#1A8A7D", // dark teal
-	"#B8860B", // dark goldenrod
-	"#7B2D8E", // dark violet
-	"#C0561A", // dark orange
-	"#2E7D32", // dark green
-	"#1A5DB0", // dark blue
-	"#B03060", // dark pink
-	"#007A99", // dark cyan
-	"#9B30FF", // dark fuchsia
-	"#558B2F", // dark lime
-}
-
-// authorColors is set at init time based on terminal background.
-var authorColors []lipgloss.Color
-
-// initAuthorColors selects the author color palette based on terminal background.
-// Must be called before the TUI starts (e.g., alongside detectGlamourStyle).
-func initAuthorColors() {
-	if termenv.HasDarkBackground() {
-		authorColors = authorColorsDark
+// buildTheme constructs a fully populated Theme for dark or light backgrounds.
+func buildTheme(isDark bool) Theme {
+	var t Theme
+	if isDark {
+		t.Primary = lipgloss.Color("#7B68EE")
+		t.Secondary = lipgloss.Color("#5B5682")
+		t.Muted = lipgloss.Color("#636363")
+		t.Highlight = lipgloss.Color("#E0DAFF")
+		t.StatusBg = lipgloss.Color("#24283B")
+		t.Text = lipgloss.Color("#C0CAF5")
+		t.Success = lipgloss.Color("#9ECE6A")
+		t.AuthorColors = []lipgloss.Color{
+			"#7B68EE", // medium slate blue
+			"#FF6B6B", // coral red
+			"#4ECDC4", // teal
+			"#FFD93D", // gold
+			"#C084FC", // violet
+			"#FF8C42", // orange
+			"#6BCB77", // green
+			"#4D96FF", // blue
+			"#FF6EC7", // hot pink
+			"#00D2FF", // cyan
+			"#E879F9", // fuchsia
+			"#A3E635", // lime
+		}
+		t.GlamourStyle = "dark"
 	} else {
-		authorColors = authorColorsLight
+		t.Primary = lipgloss.Color("#4B38AE")
+		t.Secondary = lipgloss.Color("#B8B0D8")
+		t.Muted = lipgloss.Color("#7A7A7A")
+		t.Highlight = lipgloss.Color("#3B2E8A")
+		t.StatusBg = lipgloss.Color("#E8E4F0")
+		t.Text = lipgloss.Color("#2E2E3E")
+		t.Success = lipgloss.Color("#2E7D32")
+		t.AuthorColors = []lipgloss.Color{
+			"#4B38AE", // deep slate blue
+			"#C0392B", // dark red
+			"#1A8A7D", // dark teal
+			"#B8860B", // dark goldenrod
+			"#7B2D8E", // dark violet
+			"#C0561A", // dark orange
+			"#2E7D32", // dark green
+			"#1A5DB0", // dark blue
+			"#B03060", // dark pink
+			"#007A99", // dark cyan
+			"#9B30FF", // dark fuchsia
+			"#558B2F", // dark lime
+		}
+		t.GlamourStyle = "light"
+	}
+
+	// Build styles from the palette.
+	t.Sidebar = lipgloss.NewStyle().
+		BorderRight(true).
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(t.Secondary)
+
+	t.SidebarItem = lipgloss.NewStyle().
+		Foreground(t.Text).
+		Padding(0, 1)
+
+	t.SidebarUnread = lipgloss.NewStyle().
+		Foreground(t.Text).
+		Bold(true).
+		Padding(0, 1)
+
+	t.SidebarSelected = lipgloss.NewStyle().
+		Foreground(t.Highlight).
+		Background(t.Secondary).
+		Bold(true).
+		Padding(0, 1)
+
+	t.SidebarSection = lipgloss.NewStyle().
+		Foreground(t.Muted).
+		Bold(true).
+		Padding(0, 1)
+
+	t.ChatAuthor = lipgloss.NewStyle().
+		Foreground(t.Primary).
+		Bold(true)
+
+	t.ChatOwnAuthor = lipgloss.NewStyle().
+		Foreground(t.Success).
+		Bold(true)
+
+	t.ChatTimestamp = lipgloss.NewStyle().
+		Foreground(t.Muted)
+
+	t.StatusBar = lipgloss.NewStyle().
+		Foreground(t.Text).
+		Background(t.StatusBg).
+		Padding(0, 1)
+
+	t.StatusConnected = lipgloss.NewStyle().
+		Foreground(t.Success)
+
+	t.ChatSystem = lipgloss.NewStyle().
+		Foreground(t.Muted)
+
+	t.QRTitle = lipgloss.NewStyle().
+		Foreground(t.Primary).
+		Bold(true)
+
+	t.ACSuggestion = lipgloss.NewStyle().
+		Foreground(t.Text).
+		Padding(0, 1)
+
+	t.ACSelected = lipgloss.NewStyle().
+		Foreground(t.Highlight).
+		Background(t.Secondary).
+		Bold(true).
+		Padding(0, 1)
+
+	t.Selection = lipgloss.NewStyle().Reverse(true)
+
+	return t
+}
+
+// resolveTheme checks the config override first, falls back to terminal
+// background detection, and returns a fully built Theme.
+func resolveTheme(cfg Config) Theme {
+	switch cfg.Theme {
+	case "dark":
+		return buildTheme(true)
+	case "light":
+		return buildTheme(false)
+	default: // "auto" or ""
+		return buildTheme(termenv.HasDarkBackground())
 	}
 }
 
-// colorForPubkey derives a stable color from a hex pubkey.
-func colorForPubkey(pubkey string) lipgloss.Color {
-	colors := authorColors
+// colorForPubkey derives a stable color from a hex pubkey using the given
+// author colour palette.
+func colorForPubkey(pubkey string, colors []lipgloss.Color) lipgloss.Color {
 	if len(colors) == 0 {
-		colors = authorColorsDark
+		// Fallback to a hard-coded dark default so we never panic.
+		return lipgloss.Color("#7B68EE")
 	}
 	if len(pubkey) < 2 {
 		return colors[0]
@@ -88,79 +201,6 @@ const (
 	inputMinHeight  = 1
 	inputMaxHeight  = 8
 )
-
-// Styles
-var (
-	sidebarStyle = lipgloss.NewStyle().
-		BorderRight(true).
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(colorSecondary)
-
-	sidebarItemStyle = lipgloss.NewStyle().
-		Foreground(colorWhite).
-		Padding(0, 1)
-
-	sidebarUnreadStyle = lipgloss.NewStyle().
-		Foreground(colorWhite).
-		Bold(true).
-		Padding(0, 1)
-
-	sidebarSelectedStyle = lipgloss.NewStyle().
-		Foreground(colorHighlight).
-		Background(colorSecondary).
-		Bold(true).
-		Padding(0, 1)
-
-	sidebarSectionStyle = lipgloss.NewStyle().
-		Foreground(colorMuted).
-		Bold(true).
-		Padding(0, 1)
-
-	chatAuthorStyle = lipgloss.NewStyle().
-		Foreground(colorPrimary).
-		Bold(true)
-
-	chatOwnAuthorStyle = lipgloss.NewStyle().
-		Foreground(colorGreen).
-		Bold(true)
-
-	chatTimestampStyle = lipgloss.NewStyle().
-		Foreground(colorMuted)
-
-	statusBarStyle = lipgloss.NewStyle().
-		Foreground(colorWhite).
-		Background(colorStatusBg).
-		Padding(0, 1)
-
-	statusConnectedStyle = lipgloss.NewStyle().
-		Foreground(colorGreen)
-
-	chatSystemStyle = lipgloss.NewStyle().
-		Foreground(colorMuted)
-
-	qrTitleStyle = lipgloss.NewStyle().
-		Foreground(colorPrimary).
-		Bold(true)
-
-	acSuggestionStyle = lipgloss.NewStyle().
-		Foreground(colorWhite).
-		Padding(0, 1)
-
-	acSelectedStyle = lipgloss.NewStyle().
-		Foreground(colorHighlight).
-		Background(colorSecondary).
-		Bold(true).
-		Padding(0, 1)
-)
-
-// detectGlamourStyle queries the terminal background and returns "dark" or "light".
-// Must be called before the TUI starts.
-func detectGlamourStyle() string {
-	if termenv.HasDarkBackground() {
-		return "dark"
-	}
-	return "light"
-}
 
 // newMarkdownRenderer creates a glamour terminal renderer.
 // style should be "dark" or "light" (detected once at startup via detectGlamourStyle).

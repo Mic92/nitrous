@@ -72,7 +72,7 @@ func (m *model) renderTitleBar() string {
 	if item := m.activeSidebarItem(); item != nil {
 		title = item.Prefix() + item.DisplayName()
 	}
-	return lipgloss.NewStyle().Bold(true).Foreground(colorPrimary).Padding(0, 1).Render(title)
+	return lipgloss.NewStyle().Bold(true).Foreground(m.theme.Primary).Padding(0, 1).Render(title)
 }
 
 func (m *model) updateLayout() {
@@ -143,16 +143,16 @@ func (m *model) updateViewport() {
 	for _, rm := range resolved {
 		msg := rm.msg
 		if msg.Author == "system" {
-			lines = append(lines, chatSystemStyle.Render("  "+msg.Content))
+			lines = append(lines, m.theme.ChatSystem.Render("  "+msg.Content))
 			continue
 		}
 		var authorStyle lipgloss.Style
 		if msg.IsMine {
-			authorStyle = chatOwnAuthorStyle
+			authorStyle = m.theme.ChatOwnAuthor
 		} else if msg.PubKey != "" {
-			authorStyle = lipgloss.NewStyle().Foreground(colorForPubkey(msg.PubKey)).Bold(true)
+			authorStyle = lipgloss.NewStyle().Foreground(colorForPubkey(msg.PubKey, m.theme.AuthorColors)).Bold(true)
 		} else {
-			authorStyle = chatAuthorStyle
+			authorStyle = m.theme.ChatAuthor
 		}
 		displayName := rm.displayName
 		// Right-align the name to the colon (weechat-style).
@@ -161,7 +161,7 @@ func (m *model) updateViewport() {
 		if nameW < maxNameW {
 			namePad = strings.Repeat(" ", maxNameW-nameW)
 		}
-		ts := chatTimestampStyle.Render(msg.Timestamp.Time().Format("15:04"))
+		ts := m.theme.ChatTimestamp.Render(msg.Timestamp.Time().Format("15:04"))
 		author := namePad + authorStyle.Render(displayName)
 		// Convert single newlines to paragraph breaks for glamour,
 		// but leave newlines inside fenced code blocks untouched.
@@ -249,7 +249,7 @@ func (m *model) viewSidebar() string {
 	var items []string
 
 	// CHANNELS section
-	items = append(items, sidebarSectionStyle.Render("CHANNELS"))
+	items = append(items, m.theme.SidebarSection.Render("CHANNELS"))
 	for i, it := range m.sidebar {
 		if it.Kind() != SidebarChannel {
 			break
@@ -259,16 +259,16 @@ func (m *model) viewSidebar() string {
 			name = ansi.Truncate(name, sw-2, "")
 		}
 		if i == m.activeItem {
-			items = append(items, sidebarSelectedStyle.Render(name))
+			items = append(items, m.theme.SidebarSelected.Render(name))
 		} else if m.unread[it.ItemID()] {
-			items = append(items, sidebarUnreadStyle.Render(name))
+			items = append(items, m.theme.SidebarUnread.Render(name))
 		} else {
-			items = append(items, sidebarItemStyle.Render(name))
+			items = append(items, m.theme.SidebarItem.Render(name))
 		}
 	}
 
 	// GROUPS section
-	items = append(items, sidebarSectionStyle.Render("GROUPS"))
+	items = append(items, m.theme.SidebarSection.Render("GROUPS"))
 	for i, it := range m.sidebar {
 		if it.Kind() != SidebarGroup {
 			continue
@@ -278,16 +278,16 @@ func (m *model) viewSidebar() string {
 			name = ansi.Truncate(name, sw-2, "")
 		}
 		if i == m.activeItem {
-			items = append(items, sidebarSelectedStyle.Render(name))
+			items = append(items, m.theme.SidebarSelected.Render(name))
 		} else if m.unread[it.ItemID()] {
-			items = append(items, sidebarUnreadStyle.Render(name))
+			items = append(items, m.theme.SidebarUnread.Render(name))
 		} else {
-			items = append(items, sidebarItemStyle.Render(name))
+			items = append(items, m.theme.SidebarItem.Render(name))
 		}
 	}
 
 	// DMS section
-	items = append(items, sidebarSectionStyle.Render("DMS"))
+	items = append(items, m.theme.SidebarSection.Render("DMS"))
 	for i, it := range m.sidebar {
 		if it.Kind() != SidebarDM {
 			continue
@@ -297,17 +297,17 @@ func (m *model) viewSidebar() string {
 			name = ansi.Truncate(name, sw-2, "")
 		}
 		if i == m.activeItem {
-			items = append(items, sidebarSelectedStyle.Render(name))
+			items = append(items, m.theme.SidebarSelected.Render(name))
 		} else if m.unread[it.ItemID()] {
-			items = append(items, sidebarUnreadStyle.Render(name))
+			items = append(items, m.theme.SidebarUnread.Render(name))
 		} else {
-			items = append(items, sidebarItemStyle.Render(name))
+			items = append(items, m.theme.SidebarItem.Render(name))
 		}
 	}
 
 	content := strings.Join(items, "\n")
 
-	return sidebarStyle.Width(sw).Height(contentHeight).MaxHeight(contentHeight).Render(content)
+	return m.theme.Sidebar.Width(sw).Height(contentHeight).MaxHeight(contentHeight).Render(content)
 }
 
 func (m *model) viewContent() string {
@@ -346,8 +346,8 @@ func (m *model) connectedRelayCount() int {
 func (m *model) viewStatusBar() string {
 	connected := m.connectedRelayCount()
 	total := len(m.relays)
-	bar := statusConnectedStyle.Render(fmt.Sprintf("● %d/%d relays", connected, total))
-	return statusBarStyle.Width(m.width).Render(bar)
+	bar := m.theme.StatusConnected.Render(fmt.Sprintf("● %d/%d relays", connected, total))
+	return m.theme.StatusBar.Width(m.width).Render(bar)
 }
 
 // doubleNewlinesOutsideCode doubles single newlines for markdown paragraph

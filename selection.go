@@ -11,9 +11,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// selectionStyle applies reverse video for selection highlighting.
-var selectionStyle = lipgloss.NewStyle().Reverse(true)
-
 // applySelectionHighlight overlays reverse-video on the selected region
 // of the viewport output.
 func (m *model) applySelectionHighlight(vp string) string {
@@ -54,7 +51,7 @@ func (m *model) applySelectionHighlight(vp string) string {
 		}
 		// Rebuild line: prefix + highlighted + suffix (using plain text
 		// to avoid ANSI nesting issues).
-		vpLines[y] = plain[:from] + selectionStyle.Render(plain[from:to]) + plain[to:]
+		vpLines[y] = plain[:from] + m.theme.Selection.Render(plain[from:to]) + plain[to:]
 	}
 	return strings.Join(vpLines, "\n")
 }

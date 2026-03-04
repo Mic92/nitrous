@@ -71,12 +71,10 @@ func main() {
 	}
 	log.Printf("keys loaded: npub=%s", keys.NPub)
 
-	// Create the markdown renderer before the TUI starts so the terminal
+	// Resolve theme (dark/light) before the TUI starts so the terminal
 	// background-color query (OSC 11) completes while stdio is still normal.
-	// Detect style once, store it for re-creation on resize.
-	mdStyle := detectGlamourStyle()
-	initAuthorColors()
-	mdRender := newMarkdownRenderer(mdStyle)
+	theme := resolveTheme(cfg)
+	mdRender := newMarkdownRenderer(theme.GlamourStyle)
 
 	kr := keyer.NewPlainKeySigner(keys.SK)
 
@@ -87,7 +85,7 @@ func main() {
 		},
 	})
 
-	m := newModel(cfg, *configFlag, keys, pool, &kr, mdRender, mdStyle)
+	m := newModel(cfg, *configFlag, keys, pool, &kr, mdRender, theme)
 
 	log.Println("starting TUI")
 	p := tea.NewProgram(&m, tea.WithAltScreen(), tea.WithMouseCellMotion())

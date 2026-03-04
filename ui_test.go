@@ -5,43 +5,43 @@ import (
 )
 
 func TestColorForPubkey(t *testing.T) {
-	initAuthorColors()
+	th := buildTheme(true)
+	colors := th.AuthorColors
+
 	t.Run("deterministic", func(t *testing.T) {
 		pk := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
-		c1 := colorForPubkey(pk)
-		c2 := colorForPubkey(pk)
+		c1 := colorForPubkey(pk, colors)
+		c2 := colorForPubkey(pk, colors)
 		if c1 != c2 {
 			t.Errorf("same key should produce same color: %v != %v", c1, c2)
 		}
 	})
 
-	t.Run("different keys may differ", func(t *testing.T) {
-		// Keys starting with different bytes should (usually) differ.
-		pk1 := "00cdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
-		pk2 := "ffcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
-		// Just verify they don't panic; they might coincide if hash collides.
-		_ = colorForPubkey(pk1)
-		_ = colorForPubkey(pk2)
-	})
-
 	t.Run("short key returns fallback", func(t *testing.T) {
-		c := colorForPubkey("a")
-		if c != authorColors[0] {
-			t.Errorf("expected fallback color %v, got %v", authorColors[0], c)
+		c := colorForPubkey("a", colors)
+		if c != colors[0] {
+			t.Errorf("expected fallback color %v, got %v", colors[0], c)
 		}
 	})
 
 	t.Run("empty key returns fallback", func(t *testing.T) {
-		c := colorForPubkey("")
-		if c != authorColors[0] {
-			t.Errorf("expected fallback color %v, got %v", authorColors[0], c)
+		c := colorForPubkey("", colors)
+		if c != colors[0] {
+			t.Errorf("expected fallback color %v, got %v", colors[0], c)
 		}
 	})
 
 	t.Run("non-hex short key returns fallback", func(t *testing.T) {
-		c := colorForPubkey("zz")
-		if c != authorColors[0] {
+		c := colorForPubkey("zz", colors)
+		if c != colors[0] {
 			t.Errorf("expected fallback color for non-hex, got %v", c)
+		}
+	})
+
+	t.Run("nil colors returns hardcoded fallback", func(t *testing.T) {
+		c := colorForPubkey("ab", nil)
+		if c == "" {
+			t.Error("expected a non-empty fallback color")
 		}
 	})
 }

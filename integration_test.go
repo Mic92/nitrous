@@ -22,10 +22,9 @@ import (
 	"fiatjaf.com/nostr/nip19"
 )
 
-func init() {
-	// Ensure author colors are initialised even without a real terminal.
-	authorColors = authorColorsDark
-}
+// testTheme provides a pre-built dark theme for integration tests
+// so they don't need terminal background detection.
+var testTheme = buildTheme(true)
 
 // isNIP29Kind returns true for kinds managed by relay29 (group messages, moderation, metadata).
 func isNIP29Kind(kind int) bool {
@@ -231,7 +230,7 @@ func newTestClient(t *testing.T, name string, relayURL string) *testClient {
 		},
 	})
 
-	m := newModel(cfg, "", keys, pool, &kr, nil, "")
+	m := newModel(cfg, "", keys, pool, &kr, nil, testTheme)
 
 	tm := teatest.NewTestModel(t, &m,
 		teatest.WithInitialTermSize(120, 40),

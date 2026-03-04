@@ -16,6 +16,11 @@ private_key_file = "~/.config/nitrous/nsec"
 
 max_messages = 500
 
+# Theme: "auto" (detect terminal background), "dark", or "light".
+# Default is auto-detection. Override if detection gives wrong results
+# (e.g. inside tmux or over SSH).
+# theme = "auto"
+
 # Message logging — plain-text chat logs, one file per room.
 # Enabled by default. Set to false to disable.
 # logging = true

@@ -27,6 +27,9 @@ type Group struct {
 }
 
 type model struct {
+	// Theme (dark/light colours and styles)
+	theme Theme
+
 	// Config and keys
 	cfg         Config
 	cfgFlagPath string
@@ -63,7 +66,6 @@ type model struct {
 	viewport viewport.Model
 	input    textarea.Model
 	mdRender *glamour.TermRenderer
-	mdStyle  string
 
 	// Global messages (shown when no channel/DM is active)
 	globalMsgs []ChatMessage
@@ -217,7 +219,7 @@ func (m *model) activeSidebarItem() SidebarItem {
 
 
 
-func newModel(cfg Config, cfgFlagPath string, keys Keys, pool *nostr.Pool, kr nostr.Keyer, mdRender *glamour.TermRenderer, mdStyle string) model {
+func newModel(cfg Config, cfgFlagPath string, keys Keys, pool *nostr.Pool, kr nostr.Keyer, mdRender *glamour.TermRenderer, theme Theme) model {
 	ta := textarea.New()
 	ta.Placeholder = "Type a message... (/help for commands)"
 	ta.Prompt = "> "
@@ -257,6 +259,7 @@ func newModel(cfg Config, cfgFlagPath string, keys Keys, pool *nostr.Pool, kr no
 	}
 
 	return model{
+		theme:       theme,
 		cfg:         cfg,
 		cfgFlagPath: cfgFlagPath,
 		keys:        keys,
@@ -282,7 +285,6 @@ func newModel(cfg Config, cfgFlagPath string, keys Keys, pool *nostr.Pool, kr no
 		viewport:       vp,
 		input:          ta,
 		mdRender:       mdRender,
-		mdStyle:        mdStyle,
 		statusMsg:      fmt.Sprintf("connected to %d relays", len(cfg.Relays)),
 		logDir:         logDir,
 	}
@@ -433,9 +435,9 @@ func (m *model) loadHistory(roomType, roomKey string) []string {
 }
 
 // renderQR renders a QR code with a title line above it.
-func renderQR(title, content string) string {
+func (m *model) renderQR(title, content string) string {
 	var buf strings.Builder
-	buf.WriteString(qrTitleStyle.Render(title))
+	buf.WriteString(m.theme.QRTitle.Render(title))
 	buf.WriteString("\n\n")
 	qrterminal.GenerateWithConfig(content, qrterminal.Config{
 		Level:          qrterminal.M,
@@ -448,6 +450,6 @@ func renderQR(title, content string) string {
 		QuietZone:      1,
 	})
 	buf.WriteString("\n")
-	buf.WriteString(chatSystemStyle.Render(content))
+	buf.WriteString(m.theme.ChatSystem.Render(content))
 	return buf.String()
 }
