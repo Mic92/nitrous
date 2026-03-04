@@ -235,9 +235,9 @@ func (m *model) viewAutocomplete() string {
 	widths := make([]int, len(m.acSuggestions))
 	for i, s := range m.acSuggestions {
 		if i == m.acIndex {
-			rendered[i] = acSelectedStyle.Render(s)
+			rendered[i] = m.theme.ACSelected.Render(s)
 		} else {
-			rendered[i] = acSuggestionStyle.Render(s)
+			rendered[i] = m.theme.ACSuggestion.Render(s)
 		}
 		widths[i] = lipgloss.Width(rendered[i])
 	}
@@ -245,7 +245,7 @@ func (m *model) viewAutocomplete() string {
 	// Find a window of items that fits within maxWidth, ensuring the
 	// selected item is always visible.  Reserve space for the left/right
 	// scroll indicators so they don't push the output past maxWidth.
-	indicatorW := lipgloss.Width(acSuggestionStyle.Render("▸"))
+	indicatorW := lipgloss.Width(m.theme.ACSuggestion.Render("▸"))
 	start := m.acIndex
 	end := m.acIndex + 1
 	used := widths[m.acIndex]
@@ -288,11 +288,11 @@ func (m *model) viewAutocomplete() string {
 
 	var parts []string
 	if start > 0 {
-		parts = append(parts, acSuggestionStyle.Render("◂"))
+		parts = append(parts, m.theme.ACSuggestion.Render("◂"))
 	}
 	parts = append(parts, rendered[start:end]...)
 	if end < len(m.acSuggestions) {
-		parts = append(parts, acSuggestionStyle.Render("▸"))
+		parts = append(parts, m.theme.ACSuggestion.Render("▸"))
 	}
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, parts...)

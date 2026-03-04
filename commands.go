@@ -42,7 +42,7 @@ func (m *model) handleCommand(text string) (tea.Model, tea.Cmd) {
 		return m.openDM(arg)
 
 	case "/me":
-		m.qrOverlay = renderQR("Your npub:", "nostr:"+m.keys.NPub)
+		m.qrOverlay = m.renderQR("Your npub:", "nostr:"+m.keys.NPub)
 		return m, nil
 
 	case "/room":
@@ -55,7 +55,7 @@ func (m *model) handleCommand(text string) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				nevent := nip19.EncodeNevent(id, m.relays, nostr.PubKey{})
-				m.qrOverlay = renderQR("#"+it.Channel.Name, "nostr:"+nevent)
+				m.qrOverlay = m.renderQR("#"+it.Channel.Name, "nostr:"+nevent)
 				return m, nil
 			case GroupItem:
 				naddr, err := m.groupNaddr(it.Group)
@@ -63,7 +63,7 @@ func (m *model) handleCommand(text string) (tea.Model, tea.Cmd) {
 					m.addSystemMsg(fmt.Sprintf("encode error: %v", err))
 					return m, nil
 				}
-				m.qrOverlay = renderQR("~"+it.Group.Name, "nostr:"+naddr)
+				m.qrOverlay = m.renderQR("~"+it.Group.Name, "nostr:"+naddr)
 				return m, nil
 			}
 		}

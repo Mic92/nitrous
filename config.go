@@ -26,6 +26,7 @@ type Config struct {
 	MaxMessages    int           `toml:"max_messages"`
 	Logging        *bool         `toml:"logging"`        // nil = default (true)
 	LogDir         string        `toml:"log_dir"`
+	Theme          string        `toml:"theme"`          // "auto", "dark", "light"; empty = "auto"
 	Profile        ProfileConfig `toml:"profile"`
 }
 
