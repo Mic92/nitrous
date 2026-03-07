@@ -820,10 +820,12 @@ func (m *model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if item := m.activeSidebarItem(); item != nil {
 			switch it := item.(type) {
 			case ChannelItem:
-				return m, publishChannelMessage(m.pool, m.relays, it.Channel.ID, text, m.keys)
+				resolved, mentionPKs := resolveMentions(text, m.profiles)
+				return m, publishChannelMessage(m.pool, m.relays, it.Channel.ID, resolved, mentionPKs, m.keys)
 			case GroupItem:
 				gk := groupKey(it.Group.RelayURL, it.Group.GroupID)
-				return m, publishGroupMessage(m.pool, it.Group.RelayURL, it.Group.GroupID, text, m.groupRecentIDs[gk], m.keys)
+				resolved, mentionPKs := resolveMentions(text, m.profiles)
+				return m, publishGroupMessage(m.pool, it.Group.RelayURL, it.Group.GroupID, resolved, m.groupRecentIDs[gk], mentionPKs, m.keys)
 			case DMItem:
 				return m, sendDM(m.pool, m.relays, it.PubKey, text, m.keys, m.kr)
 			}

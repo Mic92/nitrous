@@ -162,9 +162,12 @@ func waitForGroupEvent(events <-chan nostr.RelayEvent, gk string, relayURL strin
 }
 
 // buildGroupMessageEvent builds a kind-9 message event for a NIP-29 group.
-func buildGroupMessageEvent(groupID, content string, previousIDs []string, keys Keys) (nostr.Event, error) {
+func buildGroupMessageEvent(groupID, content string, previousIDs []string, mentionPKs []string, keys Keys) (nostr.Event, error) {
 	tags := nostr.Tags{{"h", groupID}}
 	tags = append(tags, pickPreviousTags(previousIDs)...)
+	for _, pk := range mentionPKs {
+		tags = append(tags, nostr.Tag{"p", pk})
+	}
 	evt := nostr.Event{
 		Kind:      nostr.KindSimpleGroupChatMessage,
 		CreatedAt: nostr.Now(),
@@ -178,10 +181,10 @@ func buildGroupMessageEvent(groupID, content string, previousIDs []string, keys 
 }
 
 // publishGroupMessage signs and publishes a kind-9 message to a NIP-29 group.
-func publishGroupMessage(pool *nostr.Pool, relayURL, groupID, content string, previousIDs []string, keys Keys) tea.Cmd {
+func publishGroupMessage(pool *nostr.Pool, relayURL, groupID, content string, previousIDs []string, mentionPKs []string, keys Keys) tea.Cmd {
 	return func() tea.Msg {
 		gk := groupKey(relayURL, groupID)
-		evt, err := buildGroupMessageEvent(groupID, content, previousIDs, keys)
+		evt, err := buildGroupMessageEvent(groupID, content, previousIDs, mentionPKs, keys)
 		if err != nil {
 			return nostrErrMsg{err}
 		}

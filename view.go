@@ -165,8 +165,9 @@ func (m *model) updateViewport() {
 		author := namePad + authorStyle.Render(displayName)
 		// Convert single newlines to paragraph breaks for glamour,
 		// but leave newlines inside fenced code blocks untouched.
-		mdContent := doubleNewlinesOutsideCode(msg.Content)
-		content := renderMarkdown(m.mdRender, mdContent)
+		mentionResolved, mentionNames := renderMentions(msg.Content, m.profiles)
+		mdContent := doubleNewlinesOutsideCode(mentionResolved)
+		content := styleMentions(renderMarkdown(m.mdRender, mdContent), mentionNames, m.theme.ChatMention)
 		prefix := fmt.Sprintf("%s %s: ", ts, author)
 		prefixW := lipgloss.Width(prefix)
 		pad := strings.Repeat(" ", prefixW)

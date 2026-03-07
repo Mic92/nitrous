@@ -37,6 +37,7 @@ type Theme struct {
 	ACSuggestion    lipgloss.Style
 	ACSelected      lipgloss.Style
 	Selection       lipgloss.Style
+	ChatMention     lipgloss.Style
 
 	// Author colour palette for per-pubkey colouring.
 	AuthorColors []lipgloss.Color
@@ -159,6 +160,10 @@ func buildTheme(isDark bool) Theme {
 		Padding(0, 1)
 
 	t.Selection = lipgloss.NewStyle().Reverse(true)
+
+	t.ChatMention = lipgloss.NewStyle().
+		Foreground(t.Highlight).
+		Bold(true)
 
 	return t
 }

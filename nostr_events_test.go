@@ -69,7 +69,7 @@ func TestBuildChannelMessageEvent(t *testing.T) {
 	channelID := "abc123def456abc123def456abc123def456abc123def456abc123def456abcd"
 	content := "hello world"
 
-	evt, err := buildChannelMessageEvent(channelID, content, keys)
+	evt, err := buildChannelMessageEvent(channelID, content, nil, keys)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -95,6 +95,54 @@ func TestBuildChannelMessageEvent(t *testing.T) {
 
 	if !evt.VerifySignature() {
 		t.Error("invalid signature")
+	}
+}
+
+func TestBuildChannelMessageEvent_WithMentions(t *testing.T) {
+	keys := testKeys(t)
+	channelID := "abc123def456abc123def456abc123def456abc123def456abc123def456abcd"
+	mentionPKs := []string{
+		"aaaa000000000000000000000000000000000000000000000000000000000001",
+		"bbbb000000000000000000000000000000000000000000000000000000000002",
+	}
+
+	evt, err := buildChannelMessageEvent(channelID, "hello", mentionPKs, keys)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, pk := range mentionPKs {
+		if !hasTag(evt, "p", pk) {
+			t.Errorf("missing [\"p\", %q] tag", pk)
+		}
+	}
+	// Root tag should still be present.
+	found := false
+	for _, tag := range evt.Tags {
+		if len(tag) >= 4 && tag[0] == "e" && tag[1] == channelID && tag[3] == "root" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("missing root tag")
+	}
+}
+
+func TestBuildGroupMessageEvent_WithMentions(t *testing.T) {
+	keys := testKeys(t)
+	mentionPKs := []string{"aaaa000000000000000000000000000000000000000000000000000000000001"}
+
+	evt, err := buildGroupMessageEvent("testgroup", "hello", nil, mentionPKs, keys)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !hasTag(evt, "p", mentionPKs[0]) {
+		t.Errorf("missing [\"p\", %q] tag", mentionPKs[0])
+	}
+	if !hasTag(evt, "h", "testgroup") {
+		t.Error("missing [\"h\", groupID] tag")
 	}
 }
 
@@ -199,7 +247,7 @@ func TestBuildGroupMessageEvent(t *testing.T) {
 	content := "hello group"
 	previousIDs := []string{"aaa111", "bbb222"}
 
-	evt, err := buildGroupMessageEvent(groupID, content, previousIDs, keys)
+	evt, err := buildGroupMessageEvent(groupID, content, previousIDs, nil, keys)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -450,12 +498,12 @@ func TestEventBuildersPubKeyConsistency(t *testing.T) {
 		build func() (nostr.Event, error)
 	}{
 		{"CreateChannel", func() (nostr.Event, error) { return buildCreateChannelEvent("ch", keys) }},
-		{"ChannelMessage", func() (nostr.Event, error) { return buildChannelMessageEvent("ch", "hi", keys) }},
+		{"ChannelMessage", func() (nostr.Event, error) { return buildChannelMessageEvent("ch", "hi", nil, keys) }},
 		{"Profile", func() (nostr.Event, error) {
 			return buildProfileEvent(ProfileConfig{Name: "test"}, keys)
 		}},
 		{"DMRelays", func() (nostr.Event, error) { return buildDMRelaysEvent([]string{"wss://r"}, keys) }},
-		{"GroupMessage", func() (nostr.Event, error) { return buildGroupMessageEvent("g", "hi", nil, keys) }},
+		{"GroupMessage", func() (nostr.Event, error) { return buildGroupMessageEvent("g", "hi", nil, nil, keys) }},
 		{"JoinGroup", func() (nostr.Event, error) { return buildJoinGroupEvent("g", nil, "", keys) }},
 		{"LeaveGroup", func() (nostr.Event, error) { return buildLeaveGroupEvent("g", nil, keys) }},
 		{"CreateGroup", func() (nostr.Event, error) { return buildCreateGroupEvent("gid", "name", keys) }},

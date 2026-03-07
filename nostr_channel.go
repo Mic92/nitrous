@@ -163,14 +163,16 @@ func waitForChannelEvent(events <-chan nostr.RelayEvent, channelID string, keys 
 }
 
 // buildChannelMessageEvent builds a kind-42 message event for a NIP-28 channel.
-func buildChannelMessageEvent(channelID, content string, keys Keys) (nostr.Event, error) {
+func buildChannelMessageEvent(channelID, content string, mentionPKs []string, keys Keys) (nostr.Event, error) {
+	tags := nostr.Tags{{"e", channelID, "", "root"}}
+	for _, pk := range mentionPKs {
+		tags = append(tags, nostr.Tag{"p", pk})
+	}
 	evt := nostr.Event{
 		Kind:      nostr.KindChannelMessage,
 		CreatedAt: nostr.Now(),
-		Tags: nostr.Tags{
-			{"e", channelID, "", "root"},
-		},
-		Content: content,
+		Tags:      tags,
+		Content:   content,
 	}
 	if err := evt.Sign(keys.SK); err != nil {
 		return evt, err
@@ -180,9 +182,9 @@ func buildChannelMessageEvent(channelID, content string, keys Keys) (nostr.Event
 
 // publishChannelMessage signs and publishes a kind-42 message to a channel.
 // Returns a channelEventMsg with the local message so it appears immediately.
-func publishChannelMessage(pool *nostr.Pool, relays []string, channelID string, content string, keys Keys) tea.Cmd {
+func publishChannelMessage(pool *nostr.Pool, relays []string, channelID string, content string, mentionPKs []string, keys Keys) tea.Cmd {
 	return func() tea.Msg {
-		evt, err := buildChannelMessageEvent(channelID, content, keys)
+		evt, err := buildChannelMessageEvent(channelID, content, mentionPKs, keys)
 		if err != nil {
 			return nostrErrMsg{err}
 		}
