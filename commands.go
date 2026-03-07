@@ -495,7 +495,8 @@ func (m *model) openDM(input string) (tea.Model, tea.Cmd) {
 	}
 	m.updateViewport()
 	if newPeer {
-		return m, publishContactsListCmd(m.pool, m.relays, contactsFromModel(m.allDMPeers(), m.profiles), m.keys, m.kr)
+		m.fetchedContacts[pk] = true
+		return m, publishContactsListCmd(m.pool, m.relays, contactsFromModel(m.allDMPeers(), m.profiles, m.fetchedContacts), m.keys, m.kr)
 	}
 	return m, nil
 }
@@ -554,11 +555,12 @@ func (m *model) leaveCurrentItem() (tea.Model, tea.Cmd) {
 	case DMItem:
 		peer := it.PubKey
 
-		// Remove from sidebar and message history.
+		// Remove from sidebar, message history, and fetched contacts.
 		m.removeSidebarItem(m.activeItem)
 		delete(m.msgs, peer)
+		delete(m.fetchedContacts, peer)
 
-		leaveCmds = append(leaveCmds, publishContactsListCmd(m.pool, m.relays, contactsFromModel(m.allDMPeers(), m.profiles), m.keys, m.kr))
+		leaveCmds = append(leaveCmds, publishContactsListCmd(m.pool, m.relays, contactsFromModel(m.allDMPeers(), m.profiles, m.fetchedContacts), m.keys, m.kr))
 		log.Printf("leaveCurrentItem: left DM with %s", m.resolveAuthor(peer))
 	}
 

@@ -113,6 +113,11 @@ type model struct {
 	groupsListTS   nostr.Timestamp
 	nip51Loaded    bool // true after the initial NIP-51 fetch completes
 
+	// fetchedContacts preserves the contacts loaded from the relay so that
+	// publishing never drops peers that are in the relay list but missing
+	// from the sidebar (e.g. due to replay-guard filtering during startup).
+	fetchedContacts map[string]bool // pubkeys from the last NIP-51 contacts fetch
+
 	// Logging
 	logDir string // empty = logging disabled
 }
@@ -279,7 +284,8 @@ func newModel(cfg Config, cfgFlagPath string, keys Keys, pool *nostr.Pool, kr no
 		unread:         make(map[string]bool),
 		localDMEchoes:  make(map[string]time.Time),
 		profiles:       profiles,
-		profilePending: make(map[string]bool),
+		profilePending:  make(map[string]bool),
+		fetchedContacts: make(map[string]bool),
 		lastInputHeight: inputMinHeight,
 		historyIndex:    -1,
 		viewport:       vp,
