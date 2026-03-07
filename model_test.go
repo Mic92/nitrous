@@ -542,6 +542,7 @@ func TestContactListWipeOnRestart(t *testing.T) {
 		profilePending:  make(map[string]bool),
 		seenEvents:      make(map[string]time.Time),
 		seenEventsClean: time.Now(),
+		fetchedContacts: make(map[string]bool),
 		dmSeenAtStart:   1000,
 		lastDMSeen:      1000,
 		cfg:             Config{MaxMessages: 100},
@@ -604,17 +605,17 @@ func TestContactListWipeOnRestart(t *testing.T) {
 	}
 
 	// Step 5: Check what contactsFromModel would publish.
-	// On master, this only uses allDMPeers() — the sidebar contents.
-	published := contactsFromModel(m.allDMPeers(), m.profiles)
+	// With the fix, fetchedContacts preserves relay contacts even if they
+	// leave the sidebar.
+	published := contactsFromModel(m.allDMPeers(), m.profiles, m.fetchedContacts)
 	publishedPKs := make(map[string]bool)
 	for _, c := range published {
 		publishedPKs[c.PubKey] = true
 	}
 
-	// BUG: pk_bob was on the relay's NIP-51 list but is no longer in the sidebar.
-	// The published list will NOT contain pk_bob, causing data loss.
+	// pk_bob was on the relay's NIP-51 list; fetchedContacts must preserve it.
 	if !publishedPKs["pk_bob"] {
-		t.Errorf("BUG CONFIRMED: pk_bob was in the NIP-51 contacts list from the relay " +
+		t.Errorf("pk_bob was in the NIP-51 contacts list from the relay " +
 			"but is missing from the published list — contact silently dropped!")
 	}
 

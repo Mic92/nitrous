@@ -184,9 +184,26 @@ func parseSimpleGroupsListEvent(evt *nostr.Event) []SavedGroup {
 
 // contactsFromModel converts in-memory DM peer list + profile cache into a
 // []Contact suitable for building a kind 30000 event.
-func contactsFromModel(dmPeers []string, profiles map[string]string) []Contact {
+// fetchedContacts contains pubkeys that were in the relay's contacts list;
+// they are preserved even if they're missing from the sidebar to prevent
+// accidental data loss during startup races.
+func contactsFromModel(dmPeers []string, profiles map[string]string, fetchedContacts map[string]bool) []Contact {
+	seen := make(map[string]bool, len(dmPeers))
 	var contacts []Contact
 	for _, pk := range dmPeers {
+		seen[pk] = true
+		name := shortPK(pk)
+		if n, ok := profiles[pk]; ok && n != "" {
+			name = n
+		}
+		contacts = append(contacts, Contact{Name: name, PubKey: pk})
+	}
+	// Merge contacts that were on the relay but are not currently in the
+	// sidebar (e.g. filtered out by the DM replay guard).
+	for pk := range fetchedContacts {
+		if seen[pk] {
+			continue
+		}
 		name := shortPK(pk)
 		if n, ok := profiles[pk]; ok && n != "" {
 			name = n

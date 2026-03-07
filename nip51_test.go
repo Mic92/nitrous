@@ -328,7 +328,7 @@ func TestContactsFromModel(t *testing.T) {
 		"pk3": "charlie",
 	}
 
-	got := contactsFromModel(dmPeers, profiles)
+	got := contactsFromModel(dmPeers, profiles, nil)
 	if len(got) != 3 {
 		t.Fatalf("got %d contacts, want 3", len(got))
 	}
@@ -347,8 +347,33 @@ func TestContactsFromModel(t *testing.T) {
 	}
 }
 
+func TestContactsFromModelMergesFetchedContacts(t *testing.T) {
+	// Simulate: sidebar only has pk1, but pk2 was in the relay's contacts list.
+	// pk2 should be preserved in the output.
+	dmPeers := []string{"pk1"}
+	profiles := map[string]string{
+		"pk1": "alice",
+		"pk2": "bob",
+	}
+	fetched := map[string]bool{"pk1": true, "pk2": true}
+
+	got := contactsFromModel(dmPeers, profiles, fetched)
+	if len(got) != 2 {
+		t.Fatalf("got %d contacts, want 2", len(got))
+	}
+
+	// pk1 from sidebar
+	if got[0].Name != "alice" || got[0].PubKey != "pk1" {
+		t.Errorf("contact[0] = %+v, want {alice, pk1}", got[0])
+	}
+	// pk2 merged from fetched contacts
+	if got[1].Name != "bob" || got[1].PubKey != "pk2" {
+		t.Errorf("contact[1] = %+v, want {bob, pk2}", got[1])
+	}
+}
+
 func TestContactsFromModelEmpty(t *testing.T) {
-	got := contactsFromModel(nil, nil)
+	got := contactsFromModel(nil, nil, nil)
 	if len(got) != 0 {
 		t.Errorf("got %d contacts, want 0", len(got))
 	}

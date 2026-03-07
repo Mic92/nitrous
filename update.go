@@ -299,7 +299,7 @@ func (m *model) handleDMEvent(msg dmEventMsg) (tea.Model, tea.Cmd) {
 		batchCmds = append(batchCmds, profileCmd)
 	}
 	if newPeer && m.nip51Loaded {
-		batchCmds = append(batchCmds, publishContactsListCmd(m.pool, m.relays, contactsFromModel(m.allDMPeers(), m.profiles), m.keys, m.kr))
+		batchCmds = append(batchCmds, publishContactsListCmd(m.pool, m.relays, contactsFromModel(m.allDMPeers(), m.profiles, m.fetchedContacts), m.keys, m.kr))
 	}
 	if m.dmEvents != nil {
 		batchCmds = append(batchCmds, waitForDMEvent(m.dmEvents, m.keys))
@@ -508,7 +508,7 @@ func (m *model) handleProfileResolved(msg profileResolvedMsg) (tea.Model, tea.Cm
 		m.updateDMItemName(msg.PubKey, msg.DisplayName)
 		m.updateViewport()
 		if m.nip51Loaded {
-			return m, publishContactsListCmd(m.pool, m.relays, contactsFromModel(m.allDMPeers(), m.profiles), m.keys, m.kr)
+			return m, publishContactsListCmd(m.pool, m.relays, contactsFromModel(m.allDMPeers(), m.profiles, m.fetchedContacts), m.keys, m.kr)
 		}
 		return m, nil
 	}
@@ -570,7 +570,10 @@ func (m *model) handleNIP51ListsFetched(msg nip51ListsFetchedMsg) (tea.Model, te
 	if msg.contactsTS > m.contactsListTS && msg.contacts != nil {
 		m.contactsListTS = msg.contactsTS
 		m.replaceDMPeers(msg.contacts)
+		// Remember every contact fetched from the relay so we never
+		// accidentally drop them when publishing an updated list.
 		for _, c := range msg.contacts {
+			m.fetchedContacts[c.PubKey] = true
 			m.profiles[c.PubKey] = c.Name
 		}
 		// Fetch profiles for any new contacts.
