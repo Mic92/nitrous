@@ -106,6 +106,12 @@ type model struct {
 	// QR overlay (non-empty = show full-screen QR)
 	qrOverlay string
 
+	// Channel selector popup state
+	showChannelSelector bool
+	channelSelectorInput string
+	channelSelectorItems []SidebarItem  // filtered items
+	channelSelectorIndex int            // selected index in filtered list
+
 	// Mouse selection state
 	selecting  bool
 	selectFrom [2]int // [x, y] screen coordinates at press
@@ -399,6 +405,25 @@ func (m *model) syncInputHeight() {
 func (m *model) clearUnread() {
 	if item := m.activeSidebarItem(); item != nil {
 		delete(m.unread, item.ItemID())
+	}
+}
+
+// updateChannelSelectorItems filters the sidebar items based on the current input.
+func (m *model) updateChannelSelectorItems() {
+	m.channelSelectorItems = nil
+	filter := strings.ToLower(m.channelSelectorInput)
+	
+	for _, item := range m.sidebar {
+		displayName := strings.ToLower(item.DisplayName())
+		// Prefix matching - check if the display name starts with the filter
+		if strings.HasPrefix(displayName, filter) {
+			m.channelSelectorItems = append(m.channelSelectorItems, item)
+		}
+	}
+	
+	// Reset index if it's out of bounds
+	if m.channelSelectorIndex >= len(m.channelSelectorItems) {
+		m.channelSelectorIndex = 0
 	}
 }
 

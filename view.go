@@ -240,8 +240,15 @@ func (m *model) View() string {
 	statusBar := m.viewStatusBar()
 
 	mainArea := lipgloss.JoinHorizontal(lipgloss.Top, sidebar, content)
+	baseView := lipgloss.JoinVertical(lipgloss.Left, mainArea, statusBar)
 
-	return lipgloss.JoinVertical(lipgloss.Left, mainArea, statusBar)
+	// Show channel selector popup on top if active
+	if m.showChannelSelector {
+		popup := m.viewChannelSelector()
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup)
+	}
+
+	return baseView
 }
 
 func (m *model) viewSidebar() string {
@@ -376,4 +383,67 @@ func doubleNewlinesOutsideCode(s string) string {
 		result = strings.ReplaceAll(result, "\n\n\n", "\n\n")
 	}
 	return result
+}
+
+// viewChannelSelector renders the channel/DM selector popup.
+func (m *model) viewChannelSelector() string {
+	width := 60
+	height := 20
+	maxItems := height - 4 // Account for borders and input
+
+	// Build the popup content
+	var items []string
+	items = append(items, fmt.Sprintf("Go to: %s█", m.channelSelectorInput))
+	items = append(items, "")
+
+	// Show filtered items
+	start := 0
+	end := len(m.channelSelectorItems)
+	
+	// Scroll if there are more items than can fit
+	if len(m.channelSelectorItems) > maxItems {
+		if m.channelSelectorIndex >= maxItems/2 {
+			start = m.channelSelectorIndex - maxItems/2
+			end = start + maxItems
+			if end > len(m.channelSelectorItems) {
+				end = len(m.channelSelectorItems)
+				start = end - maxItems
+			}
+		} else {
+			end = maxItems
+		}
+	}
+
+	for i := start; i < end; i++ {
+		if i >= len(m.channelSelectorItems) {
+			break
+		}
+		item := m.channelSelectorItems[i]
+		prefix := item.Prefix()
+		name := item.DisplayName()
+		line := fmt.Sprintf("%s%s", prefix, name)
+		
+		if i == m.channelSelectorIndex {
+			line = m.theme.SidebarSelected.Render(line)
+		}
+		items = append(items, line)
+	}
+
+	// Pad to minimum height
+	for len(items) < height-2 {
+		items = append(items, "")
+	}
+
+	content := strings.Join(items, "\n")
+	
+	// Style the popup with border
+	popup := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(m.theme.Primary).
+		Width(width).
+		Height(height).
+		Padding(1).
+		Render(content)
+
+	return popup
 }

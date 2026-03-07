@@ -34,6 +34,7 @@ See ./config.example.toml for example documentation.
 | Key         | Action                    |
 |-------------|---------------------------|
 | `Enter`     | Send message              |
+| `Ctrl+K`    | Open channel/DM selector  |
 | `Ctrl+Up`   | Previous channel/group/DM |
 | `Ctrl+Down` | Next channel/group/DM     |
 | `PgUp`      | Scroll up                 |

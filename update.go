@@ -230,7 +230,7 @@ func (m *model) handleChannelEvent(msg channelEventMsg) (tea.Model, tea.Cmd) {
 	// Notify on channel mentions unless we're focused on this channel.
 	// Skip messages older than startup to avoid replayed history notifications.
 	if !cm.IsMine && cm.Timestamp > m.startedAt && mentionsUser(cm.Content, cm.Tags, m.keys.PK.Hex()) {
-		if !(m.focused && m.activeChannelID() == chID) {
+		if !m.focused || m.activeChannelID() != chID {
 			// Resolve channel name for notification title.
 			chName := shortPK(chID)
 			for _, it := range m.sidebar {
@@ -320,7 +320,7 @@ func (m *model) handleDMEvent(msg dmEventMsg) (tea.Model, tea.Cmd) {
 	var batchCmds []tea.Cmd
 	// Notify on incoming DMs unless we're focused on this conversation.
 	// Skip messages older than last seen to avoid replayed history notifications.
-	if !cm.IsMine && cm.Timestamp > m.dmSeenAtStart && !(m.focused && m.isDMSelected() && peer == m.activeDMPeerPK()) {
+	if !cm.IsMine && cm.Timestamp > m.dmSeenAtStart && (!m.focused || !m.isDMSelected() || peer != m.activeDMPeerPK()) {
 		if cmd := notifyCmd(m.cfg, "DM from "+m.resolveAuthor(peer), notifyBody(cm.Content, m.profiles)); cmd != nil {
 			batchCmds = append(batchCmds, cmd)
 		}
@@ -423,7 +423,7 @@ func (m *model) handleGroupEvent(msg groupEventMsg) (tea.Model, tea.Cmd) {
 	// Notify on group mentions unless we're focused on this group.
 	// Skip messages older than startup to avoid replayed history notifications.
 	if !cm.IsMine && cm.Timestamp > m.startedAt && mentionsUser(cm.Content, cm.Tags, m.keys.PK.Hex()) {
-		if !(m.focused && m.activeGroupKey() == gk) {
+		if !m.focused || m.activeGroupKey() != gk {
 			// Resolve group name for notification title.
 			groupName := shortPK(gk)
 			for _, it := range m.sidebar {
@@ -775,6 +775,71 @@ func (m *model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Handle channel selector popup input
+	if m.showChannelSelector {
+		switch msg.String() {
+		case "esc":
+			m.showChannelSelector = false
+			m.channelSelectorInput = ""
+			m.channelSelectorItems = nil
+			m.channelSelectorIndex = 0
+			return m, nil
+		case "enter":
+			if len(m.channelSelectorItems) > 0 && m.channelSelectorIndex >= 0 && m.channelSelectorIndex < len(m.channelSelectorItems) {
+				// Find the selected item in the main sidebar and switch to it
+				selectedItem := m.channelSelectorItems[m.channelSelectorIndex]
+				for i, sidebarItem := range m.sidebar {
+					if sidebarItem.ItemID() == selectedItem.ItemID() {
+						m.activeItem = i
+						m.clearUnread()
+						m.updateViewport()
+						break
+					}
+				}
+				// Close popup
+				m.showChannelSelector = false
+				m.channelSelectorInput = ""
+				m.channelSelectorItems = nil
+				m.channelSelectorIndex = 0
+				return m, nil
+			}
+		case "up":
+			if len(m.channelSelectorItems) > 0 {
+				m.channelSelectorIndex--
+				if m.channelSelectorIndex < 0 {
+					m.channelSelectorIndex = len(m.channelSelectorItems) - 1
+				}
+			}
+			return m, nil
+		case "down":
+			if len(m.channelSelectorItems) > 0 {
+				m.channelSelectorIndex++
+				if m.channelSelectorIndex >= len(m.channelSelectorItems) {
+					m.channelSelectorIndex = 0
+				}
+			}
+			return m, nil
+		case "backspace":
+			if len(m.channelSelectorInput) > 0 {
+				m.channelSelectorInput = m.channelSelectorInput[:len(m.channelSelectorInput)-1]
+				m.channelSelectorIndex = 0
+				m.updateChannelSelectorItems()
+			}
+			return m, nil
+		default:
+			// Add typed character to filter
+			if len(msg.Runes) == 1 {
+				r := msg.Runes[0]
+				if r >= 32 && r <= 126 { // printable ASCII
+					m.channelSelectorInput += string(r)
+					m.channelSelectorIndex = 0
+					m.updateChannelSelectorItems()
+				}
+			}
+			return m, nil
+		}
+	}
+
 	// Input history navigation — only when cursor is at the
 	// top (up) or bottom (down) line of the textarea.
 	if msg.String() == "up" && m.input.Line() == 0 && len(m.inputHistory) > 0 {
@@ -810,6 +875,14 @@ func (m *model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.dmCancel()
 		}
 		return m, tea.Quit
+
+	case "ctrl+k":
+		// Open channel selector popup
+		m.showChannelSelector = true
+		m.channelSelectorInput = ""
+		m.channelSelectorIndex = 0
+		m.updateChannelSelectorItems()
+		return m, nil
 
 	case "ctrl+up":
 		total := m.sidebarTotal()
