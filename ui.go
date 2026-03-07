@@ -63,12 +63,12 @@ func buildTheme(isDark bool) Theme {
 			"#FFD93D", // gold
 			"#C084FC", // violet
 			"#FF8C42", // orange
-			"#6BCB77", // green
 			"#4D96FF", // blue
 			"#FF6EC7", // hot pink
 			"#00D2FF", // cyan
 			"#E879F9", // fuchsia
-			"#A3E635", // lime
+			"#F5A623", // amber
+			"#7FDBCA", // mint
 		}
 		t.GlamourStyle = "dark"
 	} else {
@@ -86,12 +86,12 @@ func buildTheme(isDark bool) Theme {
 			"#B8860B", // dark goldenrod
 			"#7B2D8E", // dark violet
 			"#C0561A", // dark orange
-			"#2E7D32", // dark green
 			"#1A5DB0", // dark blue
 			"#B03060", // dark pink
 			"#007A99", // dark cyan
 			"#9B30FF", // dark fuchsia
-			"#558B2F", // dark lime
+			"#CC7A00", // dark amber
+			"#1A6B5A", // dark mint
 		}
 		t.GlamourStyle = "light"
 	}
