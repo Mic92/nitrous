@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"fiatjaf.com/nostr"
 )
@@ -511,4 +512,116 @@ func TestSidebarHelpers(t *testing.T) {
 			t.Errorf("groupCount() = %d, want 1", m.groupCount())
 		}
 	})
+}
+
+// TestContactListWipeOnRestart reproduces the bug where restarting nitrous
+// causes contacts to be silently dropped from the NIP-51 contacts list.
+//
+// Scenario:
+//  1. NIP-51 fetch loads contacts A, B, C into the sidebar.
+//  2. A replayed DM arrives from peer D (timestamp <= dmSeenAtStart).
+//     The replay guard skips adding D to the sidebar — correct behaviour.
+//  3. A genuinely new DM arrives from peer E (timestamp > dmSeenAtStart).
+//     E is added to the sidebar and triggers a contacts list publish.
+//  4. BUG: the published list is built solely from allDMPeers() (the sidebar),
+//     which now contains [A, B, C, E]. If any of A/B/C had been filtered out
+//     of the sidebar for any reason (e.g. replaceDMPeers race), they would be
+//     permanently lost.
+//
+// More critically: if a contact was on the relay's NIP-51 list but never
+// appeared in the sidebar (e.g. due to DM replay guard filtering), publishing
+// via contactsFromModel(allDMPeers(), profiles) will drop that contact.
+func TestContactListWipeOnRestart(t *testing.T) {
+	// Simulate startup: dmSeenAtStart is set to 1000 (the last-seen timestamp).
+	m := &model{
+		activeItem:      0,
+		msgs:            make(map[string][]ChatMessage),
+		unread:          make(map[string]bool),
+		localDMEchoes:   make(map[string]time.Time),
+		profiles:        make(map[string]string),
+		profilePending:  make(map[string]bool),
+		seenEvents:      make(map[string]time.Time),
+		seenEventsClean: time.Now(),
+		dmSeenAtStart:   1000,
+		lastDMSeen:      1000,
+		cfg:             Config{MaxMessages: 100},
+	}
+
+	// Step 1: NIP-51 fetch returns contacts: alice, bob, charlie.
+	m.handleNIP51ListsFetched(nip51ListsFetchedMsg{
+		contacts: []Contact{
+			{PubKey: "pk_alice", Name: "alice"},
+			{PubKey: "pk_bob", Name: "bob"},
+			{PubKey: "pk_charlie", Name: "charlie"},
+		},
+		contactsTS: 999,
+	})
+
+	// Verify all three are in the sidebar.
+	if got := m.dmCount(); got != 3 {
+		t.Fatalf("after NIP-51 fetch: dmCount() = %d, want 3", got)
+	}
+
+	// Step 2: A replayed DM arrives from a peer (pk_dave) that was previously
+	// removed by the user. Timestamp <= dmSeenAtStart, so replay guard kicks in.
+	m.handleDMEvent(dmEventMsg{
+		PubKey:    "pk_dave",
+		Content:   "old message",
+		Timestamp: 900, // <= dmSeenAtStart (1000)
+		EventID:   "evt_dave_old",
+		Author:    "dave",
+	})
+
+	// pk_dave should NOT be in the sidebar (replay guard).
+	if m.containsDMPeer("pk_dave") {
+		t.Fatal("pk_dave should not be in sidebar after replayed DM")
+	}
+
+	// Step 3: Now simulate that pk_bob was removed from the sidebar.
+	// This can happen if replaceDMPeers is called again with a subset,
+	// or through other sidebar manipulation. For this test, we directly
+	// remove bob to simulate the race condition.
+	for i, it := range m.sidebar {
+		if di, ok := it.(DMItem); ok && di.PubKey == "pk_bob" {
+			m.sidebar = append(m.sidebar[:i], m.sidebar[i+1:]...)
+			break
+		}
+	}
+
+	// Step 4: A genuinely new DM arrives from pk_eve (timestamp > dmSeenAtStart).
+	// This triggers a contacts list publish.
+	m.handleDMEvent(dmEventMsg{
+		PubKey:    "pk_eve",
+		Content:   "hello!",
+		Timestamp: 1500, // > dmSeenAtStart (1000)
+		EventID:   "evt_eve_new",
+		Author:    "eve",
+	})
+
+	// pk_eve should now be in the sidebar.
+	if !m.containsDMPeer("pk_eve") {
+		t.Fatal("pk_eve should be in sidebar after new DM")
+	}
+
+	// Step 5: Check what contactsFromModel would publish.
+	// On master, this only uses allDMPeers() — the sidebar contents.
+	published := contactsFromModel(m.allDMPeers(), m.profiles)
+	publishedPKs := make(map[string]bool)
+	for _, c := range published {
+		publishedPKs[c.PubKey] = true
+	}
+
+	// BUG: pk_bob was on the relay's NIP-51 list but is no longer in the sidebar.
+	// The published list will NOT contain pk_bob, causing data loss.
+	if !publishedPKs["pk_bob"] {
+		t.Errorf("BUG CONFIRMED: pk_bob was in the NIP-51 contacts list from the relay " +
+			"but is missing from the published list — contact silently dropped!")
+	}
+
+	// Verify the others are present.
+	for _, pk := range []string{"pk_alice", "pk_charlie", "pk_eve"} {
+		if !publishedPKs[pk] {
+			t.Errorf("expected %s in published contacts", pk)
+		}
+	}
 }
