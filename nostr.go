@@ -35,6 +35,7 @@ type ChatMessage struct {
 	ChannelID string // NIP-28 channel this message belongs to
 	GroupKey  string // NIP-29 group key "relay_url\tgroup_id" (empty for channels/DMs)
 	IsMine    bool
+	Tags      nostr.Tags // original event tags (for mention detection)
 }
 
 // nostrErrMsg wraps a nostr operation error as a Bubbletea message.

@@ -156,6 +156,7 @@ func waitForGroupEvent(events <-chan nostr.RelayEvent, gk string, relayURL strin
 				EventID:   re.ID.Hex(),
 				GroupKey:  gk,
 				IsMine:    re.PubKey == keys.PK,
+				Tags:      re.Tags,
 			})
 		}
 	}

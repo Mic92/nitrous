@@ -38,6 +38,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		return m.handleWindowSize(msg)
+	case tea.FocusMsg:
+		m.focused = true
+		return m, nil
+	case tea.BlurMsg:
+		m.focused = false
+		return m, nil
 	case tea.MouseMsg:
 		return m.handleMouse(msg)
 	case channelCreatedMsg:
@@ -221,6 +227,23 @@ func (m *model) handleChannelEvent(msg channelEventMsg) (tea.Model, tea.Cmd) {
 		m.unread[chID] = true
 	}
 	var batchCmds []tea.Cmd
+	// Notify on channel mentions unless we're focused on this channel.
+	// Skip messages older than startup to avoid replayed history notifications.
+	if !cm.IsMine && cm.Timestamp > m.startedAt && mentionsUser(cm.Content, cm.Tags, m.keys.PK.Hex()) {
+		if !(m.focused && m.activeChannelID() == chID) {
+			// Resolve channel name for notification title.
+			chName := shortPK(chID)
+			for _, it := range m.sidebar {
+				if ci, ok := it.(ChannelItem); ok && ci.Channel.ID == chID {
+					chName = "#" + ci.Channel.Name
+					break
+				}
+			}
+			if cmd := notifyCmd(m.cfg, chName, notifyBody(cm.Content, m.profiles)); cmd != nil {
+				batchCmds = append(batchCmds, cmd)
+			}
+		}
+	}
 	if profileCmd := m.maybeRequestProfile(cm.PubKey); profileCmd != nil {
 		batchCmds = append(batchCmds, profileCmd)
 	}
@@ -295,6 +318,13 @@ func (m *model) handleDMEvent(msg dmEventMsg) (tea.Model, tea.Cmd) {
 		m.unread[peer] = true
 	}
 	var batchCmds []tea.Cmd
+	// Notify on incoming DMs unless we're focused on this conversation.
+	// Skip messages older than last seen to avoid replayed history notifications.
+	if !cm.IsMine && cm.Timestamp > m.dmSeenAtStart && !(m.focused && m.isDMSelected() && peer == m.activeDMPeerPK()) {
+		if cmd := notifyCmd(m.cfg, "DM from "+m.resolveAuthor(peer), notifyBody(cm.Content, m.profiles)); cmd != nil {
+			batchCmds = append(batchCmds, cmd)
+		}
+	}
 	if profileCmd := m.maybeRequestProfile(peer); profileCmd != nil {
 		batchCmds = append(batchCmds, profileCmd)
 	}
@@ -390,6 +420,23 @@ func (m *model) handleGroupEvent(msg groupEventMsg) (tea.Model, tea.Cmd) {
 		m.unread[gk] = true
 	}
 	var batchCmds []tea.Cmd
+	// Notify on group mentions unless we're focused on this group.
+	// Skip messages older than startup to avoid replayed history notifications.
+	if !cm.IsMine && cm.Timestamp > m.startedAt && mentionsUser(cm.Content, cm.Tags, m.keys.PK.Hex()) {
+		if !(m.focused && m.activeGroupKey() == gk) {
+			// Resolve group name for notification title.
+			groupName := shortPK(gk)
+			for _, it := range m.sidebar {
+				if gi, ok := it.(GroupItem); ok && groupKey(gi.Group.RelayURL, gi.Group.GroupID) == gk {
+					groupName = "~" + gi.Group.Name
+					break
+				}
+			}
+			if cmd := notifyCmd(m.cfg, groupName, notifyBody(cm.Content, m.profiles)); cmd != nil {
+				batchCmds = append(batchCmds, cmd)
+			}
+		}
+	}
 	if profileCmd := m.maybeRequestProfile(cm.PubKey); profileCmd != nil {
 		batchCmds = append(batchCmds, profileCmd)
 	}

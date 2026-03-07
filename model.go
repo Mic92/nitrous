@@ -36,6 +36,10 @@ type model struct {
 	keys        Keys
 	pool        *nostr.Pool
 	kr          nostr.Keyer
+
+	// Focus tracking for notifications
+	focused   bool
+	startedAt nostr.Timestamp // suppress notifications for messages older than startup
 	relays      []string
 
 
@@ -270,6 +274,8 @@ func newModel(cfg Config, cfgFlagPath string, keys Keys, pool *nostr.Pool, kr no
 		keys:        keys,
 		pool:        pool,
 		kr:          kr,
+		focused:     true,
+		startedAt:   nostr.Now(),
 		relays:      cfg.Relays,
 		width:       80,
 		height:      24,

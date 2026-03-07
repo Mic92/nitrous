@@ -21,6 +21,14 @@ max_messages = 500
 # (e.g. inside tmux or over SSH).
 # theme = "auto"
 
+# Notifications — desktop notifications and terminal bell.
+# Both enabled by default. Desktop uses notify-send (Linux) or
+# osascript (macOS). Bell emits \a (useful in tmux).
+# Notifications only fire when the terminal is unfocused.
+# DMs always notify; channels/groups only notify on mention.
+# notifications_desktop = true
+# notifications_bell = true
+
 # Message logging — plain-text chat logs, one file per room.
 # Enabled by default. Set to false to disable.
 # logging = true

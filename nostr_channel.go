@@ -158,6 +158,7 @@ func waitForChannelEvent(events <-chan nostr.RelayEvent, channelID string, keys 
 			EventID:   re.ID.Hex(),
 			ChannelID: channelID,
 			IsMine:    re.PubKey == keys.PK,
+			Tags:      re.Tags,
 		})
 	}
 }

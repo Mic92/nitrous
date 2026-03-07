@@ -26,8 +26,10 @@ type Config struct {
 	MaxMessages    int           `toml:"max_messages"`
 	Logging        *bool         `toml:"logging"`        // nil = default (true)
 	LogDir         string        `toml:"log_dir"`
-	Theme          string        `toml:"theme"`          // "auto", "dark", "light"; empty = "auto"
-	Profile        ProfileConfig `toml:"profile"`
+	Theme                string        `toml:"theme"`                  // "auto", "dark", "light"; empty = "auto"
+	NotificationsDesktop *bool         `toml:"notifications_desktop"`  // nil = default (true)
+	NotificationsBell    *bool         `toml:"notifications_bell"`     // nil = default (true)
+	Profile              ProfileConfig `toml:"profile"`
 }
 
 // LoggingEnabled returns whether message logging is enabled.
@@ -36,6 +38,22 @@ func (c Config) LoggingEnabled() bool {
 		return true // enabled by default
 	}
 	return *c.Logging
+}
+
+// DesktopNotificationsEnabled returns whether desktop notifications are enabled.
+func (c Config) DesktopNotificationsEnabled() bool {
+	if c.NotificationsDesktop == nil {
+		return true // enabled by default
+	}
+	return *c.NotificationsDesktop
+}
+
+// BellNotificationsEnabled returns whether terminal bell notifications are enabled.
+func (c Config) BellNotificationsEnabled() bool {
+	if c.NotificationsBell == nil {
+		return true // enabled by default
+	}
+	return *c.NotificationsBell
 }
 
 func defaultConfig() Config {
