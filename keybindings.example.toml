@@ -1,0 +1,15 @@
+# Keybindings for nitrous. Place this file at:
+#   ~/.config/nitrous/keybindings.toml
+# or set the NITROUS_KEYBINDINGS environment variable.
+#
+# All values are arrays of bubbletea key strings.
+# Omitted keys keep their defaults shown below.
+# Multiple keys per action are supported:
+#   prev_room = ["ctrl+up", "alt+k"]
+
+quit             = ["ctrl+c"]
+prev_room        = ["ctrl+up"]
+next_room        = ["ctrl+down"]
+channel_selector = ["ctrl+k"]
+scroll_up        = ["pgup"]
+scroll_down      = ["pgdown"]

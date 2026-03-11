@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"fiatjaf.com/nostr"
 )
@@ -721,9 +722,9 @@ func (m *model) handleNIP51PublishResult(msg nip51PublishResultMsg) (tea.Model, 
 }
 
 func (m *model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Dismiss QR overlay on any key (except ctrl+c which still quits).
+	// Dismiss QR overlay on any key (except quit which still quits).
 	if m.qrOverlay != "" {
-		if msg.String() == "ctrl+c" {
+		if key.Matches(msg, m.keymap.Quit) {
 			m.cancelAllRoomSubs()
 			if m.dmCancel != nil {
 				m.dmCancel()
@@ -868,15 +869,15 @@ func (m *model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	switch msg.String() {
-	case "ctrl+c":
+	switch {
+	case key.Matches(msg, m.keymap.Quit):
 		m.cancelAllRoomSubs()
 		if m.dmCancel != nil {
 			m.dmCancel()
 		}
 		return m, tea.Quit
 
-	case "ctrl+k":
+	case key.Matches(msg, m.keymap.ChannelSelector):
 		// Open channel selector popup
 		m.showChannelSelector = true
 		m.channelSelectorInput = ""
@@ -884,7 +885,7 @@ func (m *model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.updateChannelSelectorItems()
 		return m, nil
 
-	case "ctrl+up":
+	case key.Matches(msg, m.keymap.PrevRoom):
 		total := m.sidebarTotal()
 		if total > 1 {
 			m.activeItem--
@@ -896,7 +897,7 @@ func (m *model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case "ctrl+down":
+	case key.Matches(msg, m.keymap.NextRoom):
 		total := m.sidebarTotal()
 		if total > 1 {
 			m.activeItem++
@@ -908,15 +909,15 @@ func (m *model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case "pgup":
+	case key.Matches(msg, m.keymap.ScrollUp):
 		m.viewport.ScrollUp(10)
 		return m, nil
 
-	case "pgdown":
+	case key.Matches(msg, m.keymap.ScrollDown):
 		m.viewport.ScrollDown(10)
 		return m, nil
 
-	case "enter":
+	case msg.String() == "enter":
 		text := strings.TrimSpace(m.input.Value())
 		if text == "" {
 			return m, nil

@@ -34,6 +34,10 @@ max_messages = 500
 # logging = true
 # log_dir = "~/.config/nitrous/logs"
 
+# Keybindings — override in a separate file: keybindings.toml
+# (in the same directory as this config, or set NITROUS_KEYBINDINGS).
+# See keybindings.example.toml for available actions and defaults.
+
 # Your Nostr profile (NIP-01 kind 0), published to relays on startup.
 [profile]
 # name = ""

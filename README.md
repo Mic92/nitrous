@@ -41,6 +41,14 @@ See ./config.example.toml for example documentation.
 | `PgDn`      | Scroll down               |
 | `Ctrl+C`    | Quit                      |
 
+Keybindings can be customized in `~/.config/nitrous/keybindings.toml`
+(or set `NITROUS_KEYBINDINGS`). See `keybindings.example.toml` for
+the available actions. Multiple keys per action are supported:
+
+```toml
+prev_room = ["ctrl+up", "alt+k"]
+```
+
 
 | Command                        | Description                                  |
 |--------------------------------|----------------------------------------------|
