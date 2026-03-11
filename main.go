@@ -76,6 +76,12 @@ func main() {
 	theme := resolveTheme(cfg)
 	mdRender := newMarkdownRenderer(theme.GlamourStyle)
 
+	keymap, err := LoadKeyMap(*configFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "keybindings error: %v\n", err)
+		os.Exit(1)
+	}
+
 	kr := keyer.NewPlainKeySigner(keys.SK)
 
 	pool := nostr.NewPool(nostr.PoolOptions{
@@ -85,7 +91,7 @@ func main() {
 		},
 	})
 
-	m := newModel(cfg, *configFlag, keys, pool, &kr, mdRender, theme)
+	m := newModel(cfg, *configFlag, keys, pool, &kr, mdRender, theme, keymap)
 
 	log.Println("starting TUI")
 	p := tea.NewProgram(&m, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithReportFocus())

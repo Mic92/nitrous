@@ -27,6 +27,9 @@ type Group struct {
 }
 
 type model struct {
+	// Configurable keybindings
+	keymap KeyMap
+
 	// Theme (dark/light colours and styles)
 	theme Theme
 
@@ -234,7 +237,7 @@ func (m *model) activeSidebarItem() SidebarItem {
 
 
 
-func newModel(cfg Config, cfgFlagPath string, keys Keys, pool *nostr.Pool, kr nostr.Keyer, mdRender *glamour.TermRenderer, theme Theme) model {
+func newModel(cfg Config, cfgFlagPath string, keys Keys, pool *nostr.Pool, kr nostr.Keyer, mdRender *glamour.TermRenderer, theme Theme, keymap KeyMap) model {
 	ta := textarea.New()
 	ta.Placeholder = "Type a message... (/help for commands)"
 	ta.Prompt = "> "
@@ -274,6 +277,7 @@ func newModel(cfg Config, cfgFlagPath string, keys Keys, pool *nostr.Pool, kr no
 	}
 
 	return model{
+		keymap:      keymap,
 		theme:       theme,
 		cfg:         cfg,
 		cfgFlagPath: cfgFlagPath,

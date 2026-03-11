@@ -230,7 +230,7 @@ func newTestClient(t *testing.T, name string, relayURL string) *testClient {
 		},
 	})
 
-	m := newModel(cfg, "", keys, pool, &kr, nil, testTheme)
+	m := newModel(cfg, "", keys, pool, &kr, nil, testTheme, DefaultKeyMap())
 
 	tm := teatest.NewTestModel(t, &m,
 		teatest.WithInitialTermSize(120, 40),
