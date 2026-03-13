@@ -1,5 +1,7 @@
 # nitrous
 
+![demo](./demo.svg)
+
 A terminal chat client for [Nostr](https://nostr.com), built with
 [Bubbletea](https://github.com/charmbracelet/bubbletea). Supports NIP-28
 public channels, NIP-29 relay-based groups, and NIP-17 encrypted direct
