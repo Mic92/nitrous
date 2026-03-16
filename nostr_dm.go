@@ -273,32 +273,14 @@ func sendFileMessageCmd(pool *nostr.Pool, relays []string, recipientPK string, m
 		}
 
 		// Publish to our relays.
-		for _, url := range relays {
-			r, err := pool.EnsureRelay(url)
-			if err != nil {
-				log.Printf("sendFileMessageCmd: failed to connect to %s: %v", url, err)
-				continue
-			}
-			if err := r.Publish(ctx, toUs); err != nil {
-				log.Printf("sendFileMessageCmd: failed to publish toUs to %s: %v", url, err)
-			}
-		}
+		publishToRelays(ctx, pool, relays, toUs, "toUs")
 
 		// Publish to their relays.
 		theirRelays := nip17.GetDMRelays(ctx, recipient, pool, relays)
 		if len(theirRelays) == 0 {
 			theirRelays = relays
 		}
-		for _, url := range theirRelays {
-			r, err := pool.EnsureRelay(url)
-			if err != nil {
-				log.Printf("sendFileMessageCmd: failed to connect to %s: %v", url, err)
-				continue
-			}
-			if err := r.Publish(ctx, toThem); err != nil {
-				log.Printf("sendFileMessageCmd: failed to publish toThem to %s: %v", url, err)
-			}
-		}
+		publishToRelays(ctx, pool, theirRelays, toThem, "toThem")
 
 		// Return local echo.
 		ts := nostr.Now()
@@ -312,6 +294,23 @@ func sendFileMessageCmd(pool *nostr.Pool, relays []string, recipientPK string, m
 			EventID:   hex.EncodeToString(h[:]),
 			IsMine:    true,
 		})
+	}
+}
+
+// publishToRelays connects to each relay and publishes the given event.
+// label is used in log messages to distinguish the publish target (e.g.
+// "toUs" vs "toThem").  Errors are logged but not returned because
+// partial publish success is acceptable for gift-wrapped DMs.
+func publishToRelays(ctx context.Context, pool *nostr.Pool, relays []string, event nostr.Event, label string) {
+	for _, url := range relays {
+		r, err := pool.EnsureRelay(url)
+		if err != nil {
+			log.Printf("publishToRelays[%s]: failed to connect to %s: %v", label, url, err)
+			continue
+		}
+		if err := r.Publish(ctx, event); err != nil {
+			log.Printf("publishToRelays[%s]: failed to publish to %s: %v", label, url, err)
+		}
 	}
 }
 
