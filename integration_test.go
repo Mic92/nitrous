@@ -3,22 +3,18 @@ package main
 import (
 	"bytes"
 	"context"
-	"fmt"
-	"net"
-	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/exp/teatest"
-	"github.com/fiatjaf/eventstore/slicestore"
-	"github.com/fiatjaf/relay29"
-	"github.com/fiatjaf/relay29/khatru29"
-	gonostr "github.com/nbd-wtf/go-nostr"
-	"github.com/nbd-wtf/go-nostr/nip29"
 
 	"fiatjaf.com/nostr"
+	"fiatjaf.com/nostr/eventstore/slicestore"
 	"fiatjaf.com/nostr/keyer"
+	"fiatjaf.com/nostr/khatru"
 	"fiatjaf.com/nostr/nip19"
 )
 
@@ -26,167 +22,26 @@ import (
 // so they don't need terminal background detection.
 var testTheme = buildTheme(true)
 
-// isNIP29Kind returns true for kinds managed by relay29 (group messages, moderation, metadata).
-func isNIP29Kind(kind int) bool {
-	// Group chat messages: 9, 10, 11, 12
-	if kind >= 9 && kind <= 12 {
-		return true
-	}
-	// Moderation: 9000-9007, 9021, 9022
-	if kind >= 9000 && kind <= 9022 {
-		return true
-	}
-	// Group metadata: 39000-39003
-	if kind >= 39000 && kind <= 39003 {
-		return true
-	}
-	return false
-}
-
 // ─── Embedded relay ──────────────────────────────────────────────────────────
 
 func startTestRelay(t *testing.T) (relayURL string, cleanup func()) {
 	t.Helper()
 
-	// Separate stores: one for NIP-29 events (managed by relay29), one for everything else.
-	nip29DB := &slicestore.SliceStore{}
-	if err := nip29DB.Init(); err != nil {
-		t.Fatalf("nip29DB.Init: %v", err)
-	}
-	generalDB := &slicestore.SliceStore{}
-	if err := generalDB.Init(); err != nil {
-		t.Fatalf("generalDB.Init: %v", err)
+	relay := khatru.NewRelay()
+
+	store := &slicestore.SliceStore{}
+	if err := store.Init(); err != nil {
+		t.Fatalf("slicestore.Init: %v", err)
 	}
 
-	relayPrivkey := gonostr.GeneratePrivateKey()
+	relay.UseEventstore(store, 500)
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	port := ln.Addr().(*net.TCPAddr).Port
-	domain := fmt.Sprintf("127.0.0.1:%d", port)
+	srv := httptest.NewServer(relay)
 
-	relay, state := khatru29.Init(relay29.Options{
-		Domain:    domain,
-		DB:        nip29DB,
-		SecretKey: relayPrivkey,
-		DefaultRoles: []*nip29.Role{
-			{Name: "admin", Description: "can do everything"},
-		},
-		GroupCreatorDefaultRole: &nip29.Role{Name: "admin", Description: "can do everything"},
-	})
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	t.Logf("test relay running at %s", wsURL)
 
-	state.AllowAction = func(ctx context.Context, group nip29.Group, role *nip29.Role, action relay29.Action) bool {
-		return true // permissive for testing
-	}
-
-	relay.Info.Name = "nitrous-test-relay"
-
-	// ── Make the relay handle non-NIP-29 events (kind 0, 40, 42, 1059, 10050, etc.) ──
-
-	// Wrap RejectEvent to skip non-NIP-29 events (the default policies require "h" tags).
-	origRejectEvent := make([]func(ctx context.Context, event *gonostr.Event) (bool, string), len(relay.RejectEvent))
-	copy(origRejectEvent, relay.RejectEvent)
-	relay.RejectEvent = nil
-	for _, fn := range origRejectEvent {
-		f := fn // capture
-		// Remove the "moderation events must be recent" check for testing.
-		if fmt.Sprintf("%v", []any{f}) == fmt.Sprintf("%v", []any{state.RequireModerationEventsToBeRecent}) {
-			continue
-		}
-		relay.RejectEvent = append(relay.RejectEvent, func(ctx context.Context, event *gonostr.Event) (bool, string) {
-			if !isNIP29Kind(event.Kind) {
-				return false, "" // allow non-NIP-29 events through
-			}
-			return f(ctx, event)
-		})
-	}
-
-	// Wrap RejectFilter to allow non-NIP-29 subscriptions (DM, channel, profile queries).
-	origRejectFilter := make([]func(ctx context.Context, filter gonostr.Filter) (bool, string), len(relay.RejectFilter))
-	copy(origRejectFilter, relay.RejectFilter)
-	relay.RejectFilter = nil
-	for _, fn := range origRejectFilter {
-		f := fn
-		relay.RejectFilter = append(relay.RejectFilter, func(ctx context.Context, filter gonostr.Filter) (bool, string) {
-			// If the filter contains any non-NIP-29 kind, allow it through.
-			hasNonNIP29 := false
-			for _, k := range filter.Kinds {
-				if !isNIP29Kind(k) {
-					hasNonNIP29 = true
-					break
-				}
-			}
-			// Also allow filters with no kinds specified.
-			if hasNonNIP29 || len(filter.Kinds) == 0 {
-				return false, ""
-			}
-			return f(ctx, filter)
-		})
-	}
-
-	// Wrap OnEventSaved to skip non-NIP-29 events (they'd panic on missing "h" tag).
-	origOnEventSaved := make([]func(ctx context.Context, event *gonostr.Event), len(relay.OnEventSaved))
-	copy(origOnEventSaved, relay.OnEventSaved)
-	relay.OnEventSaved = nil
-	for _, fn := range origOnEventSaved {
-		f := fn
-		relay.OnEventSaved = append(relay.OnEventSaved, func(ctx context.Context, event *gonostr.Event) {
-			if !isNIP29Kind(event.Kind) {
-				return
-			}
-			f(ctx, event)
-		})
-	}
-
-	// Wrap StoreEvent: khatru29's default handler saves ALL events to nip29DB.
-	// We need to redirect non-NIP-29 events to generalDB instead.
-	origStoreEvent := make([]func(ctx context.Context, event *gonostr.Event) error, len(relay.StoreEvent))
-	copy(origStoreEvent, relay.StoreEvent)
-	relay.StoreEvent = nil
-	for _, fn := range origStoreEvent {
-		f := fn
-		relay.StoreEvent = append(relay.StoreEvent, func(ctx context.Context, evt *gonostr.Event) error {
-			if !isNIP29Kind(evt.Kind) {
-				return nil // skip khatru29's handler for non-NIP-29 events
-			}
-			return f(ctx, evt)
-		})
-	}
-	// Add store for non-NIP-29 events.
-	relay.StoreEvent = append(relay.StoreEvent, func(ctx context.Context, evt *gonostr.Event) error {
-		if !isNIP29Kind(evt.Kind) {
-			return generalDB.SaveEvent(ctx, evt)
-		}
-		return nil
-	})
-	relay.QueryEvents = append(relay.QueryEvents, func(ctx context.Context, filter gonostr.Filter) (chan *gonostr.Event, error) {
-		hasNonNIP29 := false
-		for _, k := range filter.Kinds {
-			if !isNIP29Kind(k) {
-				hasNonNIP29 = true
-				break
-			}
-		}
-		if hasNonNIP29 || len(filter.Kinds) == 0 {
-			return generalDB.QueryEvents(ctx, filter)
-		}
-		// Return empty channel for NIP-29-only queries (handled by khatru29).
-		ch := make(chan *gonostr.Event)
-		close(ch)
-		return ch, nil
-	})
-
-	server := &http.Server{Handler: relay}
-	go func() { _ = server.Serve(ln) }()
-
-	url := fmt.Sprintf("ws://127.0.0.1:%d", port)
-	t.Logf("test relay running at %s (domain=%s)", url, domain)
-
-	return url, func() {
-		_ = server.Shutdown(context.Background())
-	}
+	return wsURL, srv.Close
 }
 
 // ─── Test client helper ──────────────────────────────────────────────────────
@@ -268,35 +123,60 @@ func sendCtrlUp(tm *teatest.TestModel) {
 }
 
 // queryRelayEvents queries the embedded relay for events matching the filter.
-func queryRelayEvents(t *testing.T, relayURL string, kinds []int, authors []string, tags map[string][]string) []*gonostr.Event {
+func queryRelayEvents(t *testing.T, relayURL string, kinds []int, authors []string, tags map[string][]string) []nostr.Event {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	r, err := gonostr.RelayConnect(ctx, relayURL)
+	r, err := nostr.RelayConnect(ctx, relayURL, nostr.RelayOptions{})
 	if err != nil {
 		t.Fatalf("queryRelayEvents: connect: %v", err)
 	}
 	defer func() { _ = r.Close() }()
 
-	filter := gonostr.Filter{
-		Kinds: kinds,
-	}
-	if len(authors) > 0 {
-		filter.Authors = authors
-	}
-	if len(tags) > 0 {
-		filter.Tags = gonostr.TagMap(tags)
+	filter := nostr.Filter{}
+
+	// Convert int kinds to nostr.Kind.
+	for _, k := range kinds {
+		filter.Kinds = append(filter.Kinds, nostr.Kind(k))
 	}
 
-	evts, err := r.QuerySync(ctx, filter)
-	if err != nil {
-		t.Fatalf("queryRelayEvents: query: %v", err)
+	// Convert string authors to nostr.PubKey.
+	for _, a := range authors {
+		pk, err := nostr.PubKeyFromHex(a)
+		if err != nil {
+			t.Fatalf("queryRelayEvents: invalid author pubkey %q: %v", a, err)
+		}
+		filter.Authors = append(filter.Authors, pk)
 	}
-	return evts
+
+	if len(tags) > 0 {
+		filter.Tags = nostr.TagMap(tags)
+	}
+
+	sub, err := r.Subscribe(ctx, filter, nostr.SubscriptionOptions{})
+	if err != nil {
+		t.Fatalf("queryRelayEvents: subscribe: %v", err)
+	}
+	defer sub.Unsub()
+
+	var evts []nostr.Event
+	for {
+		select {
+		case evt, ok := <-sub.Events:
+			if !ok {
+				return evts
+			}
+			evts = append(evts, evt)
+		case <-sub.EndOfStoredEvents:
+			return evts
+		case <-ctx.Done():
+			return evts
+		}
+	}
 }
 
-func waitForRelayEvent(t *testing.T, relayURL string, kinds []int, authors []string, tags map[string][]string, timeout time.Duration) []*gonostr.Event {
+func waitForRelayEvent(t *testing.T, relayURL string, kinds []int, authors []string, tags map[string][]string, timeout time.Duration) []nostr.Event {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -380,7 +260,7 @@ func TestIntegration(t *testing.T) {
 		if len(evts) == 0 {
 			t.Fatal("kind 40 channel creation event not found")
 		}
-		channelID = evts[0].ID
+		channelID = evts[0].ID.Hex()
 		t.Logf("channel ID: %s", channelID)
 	})
 
@@ -439,10 +319,13 @@ func TestIntegration(t *testing.T) {
 		}
 		t.Logf("group ID: %s", groupID)
 
-		// Verify group metadata (kind 39000) exists on relay.
-		metaEvts := waitForRelayEvent(t, relayURL, []int{39000}, nil, map[string][]string{"d": {groupID}}, defaultTimeout)
+		// Verify client sent kind 9002 (edit metadata) for the group.
+		// The simple khatru relay stores all events without relay29's
+		// auto-generated kind 39000 metadata — we verify the client
+		// sends the correct events, not relay-side policy.
+		metaEvts := waitForRelayEvent(t, relayURL, []int{9002}, nil, map[string][]string{"h": {groupID}}, defaultTimeout)
 		if len(metaEvts) == 0 {
-			t.Fatal("kind 39000 group metadata not found")
+			t.Fatal("kind 9002 group metadata edit not found")
 		}
 	})
 
@@ -719,7 +602,7 @@ func TestIntegration(t *testing.T) {
 		evts := queryRelayEvents(t, relayURL, []int{9021}, nil, map[string][]string{"h": {groupID}})
 		foundJoin := false
 		for _, evt := range evts {
-			if evt.PubKey == bob.hexPK {
+			if evt.PubKey.Hex() == bob.hexPK {
 				foundJoin = true
 				break
 			}

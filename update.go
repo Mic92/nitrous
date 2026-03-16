@@ -59,6 +59,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleChannelEvent(msg)
 	case dmEventMsg:
 		return m.handleDMEvent(msg)
+	case fileDownloadRequestMsg:
+		return m.handleFileDownloadRequest(msg)
 	case dmSubEndedMsg:
 		return m.handleDMSubEnded(msg)
 	case dmReconnectMsg:
@@ -208,7 +210,7 @@ func (m *model) handleDMSubStarted(msg dmSubStartedMsg) (tea.Model, tea.Cmd) {
 	}
 	m.dmEvents = msg.events
 	m.dmCancel = msg.cancel
-	return m, waitForDMEvent(m.dmEvents, m.keys)
+	return m, waitForDMEvent(m.dmEvents, m.keys, m.cacheDir)
 }
 
 func (m *model) handleChannelEvent(msg channelEventMsg) (tea.Model, tea.Cmd) {
@@ -257,7 +259,7 @@ func (m *model) handleDMEvent(msg dmEventMsg) (tea.Model, tea.Cmd) {
 	log.Printf("dmEventMsg: author=%s id=%s mine=%v content=%q", cm.Author, cm.EventID, cm.IsMine, cm.Content)
 	if m.isSeenEvent(cm.EventID) {
 		if m.dmEvents != nil {
-			return m, waitForDMEvent(m.dmEvents, m.keys)
+			return m, waitForDMEvent(m.dmEvents, m.keys, m.cacheDir)
 		}
 		return m, nil
 	}
@@ -272,7 +274,7 @@ func (m *model) handleDMEvent(msg dmEventMsg) (tea.Model, tea.Cmd) {
 			log.Printf("dmEventMsg: skipping relay echo (already have local echo)")
 			delete(m.localDMEchoes, echoKey)
 			if m.dmEvents != nil {
-				return m, waitForDMEvent(m.dmEvents, m.keys)
+				return m, waitForDMEvent(m.dmEvents, m.keys, m.cacheDir)
 			}
 			return m, nil
 		}
@@ -300,7 +302,7 @@ func (m *model) handleDMEvent(msg dmEventMsg) (tea.Model, tea.Cmd) {
 		if cm.Timestamp <= m.dmSeenAtStart {
 			log.Printf("dmEventMsg: skipping sidebar add for replayed msg from %s", shortPK(peer))
 			if m.dmEvents != nil {
-				return m, waitForDMEvent(m.dmEvents, m.keys)
+				return m, waitForDMEvent(m.dmEvents, m.keys, m.cacheDir)
 			}
 			return m, nil
 		}
@@ -333,7 +335,7 @@ func (m *model) handleDMEvent(msg dmEventMsg) (tea.Model, tea.Cmd) {
 		batchCmds = append(batchCmds, publishContactsListCmd(m.pool, m.relays, contactsFromModel(m.allDMPeers(), m.profiles, m.fetchedContacts), m.keys, m.kr))
 	}
 	if m.dmEvents != nil {
-		batchCmds = append(batchCmds, waitForDMEvent(m.dmEvents, m.keys))
+		batchCmds = append(batchCmds, waitForDMEvent(m.dmEvents, m.keys, m.cacheDir))
 	}
 	return m, tea.Batch(batchCmds...)
 }
@@ -594,8 +596,38 @@ func (m *model) handleDMSendErr(msg dmSendErrMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *model) handleFileDownloadRequest(msg fileDownloadRequestMsg) (tea.Model, tea.Cmd) {
+	log.Printf("fileDownloadRequestMsg: peer=%s eventID=%s", shortPK(msg.peer), msg.eventID[:16])
+
+	if m.isSeenEvent(msg.eventID) {
+		if m.dmEvents != nil {
+			return m, waitForDMEvent(m.dmEvents, m.keys, m.cacheDir)
+		}
+		return m, nil
+	}
+
+	// Don't mark as seen yet — the download Cmd will produce a dmEventMsg
+	// which goes through handleDMEvent where it gets marked.
+
+	var cmds []tea.Cmd
+	cmds = append(cmds, handleFileDownloadCmd(msg))
+	if m.dmEvents != nil {
+		cmds = append(cmds, waitForDMEvent(m.dmEvents, m.keys, m.cacheDir))
+	}
+	return m, tea.Batch(cmds...)
+}
+
 func (m *model) handleBlossomUpload(msg blossomUploadMsg) (tea.Model, tea.Cmd) {
 	m.addSystemMsg(fmt.Sprintf("uploaded: %s", msg.URL))
+
+	// If a DM conversation is active, send as a kind 15 file message
+	// so the file URL and decryption params travel inside the encrypted
+	// gift wrap. Otherwise, paste the URL into the input for manual sending.
+	if m.isDMSelected() {
+		peerPK := m.activeDMPeerPK()
+		return m, sendFileMessageCmd(m.pool, m.relays, peerPK, msg, m.keys, m.kr)
+	}
+
 	current := m.input.Value()
 	if current != "" && !strings.HasSuffix(current, " ") {
 		current += " "

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -133,6 +134,9 @@ type model struct {
 
 	// Logging
 	logDir string // empty = logging disabled
+
+	// Cache directory for downloaded attachments ($XDG_CACHE_HOME/nitrous).
+	cacheDir string
 }
 
 // roomSub holds a per-room subscription (channel or group).
@@ -276,6 +280,16 @@ func newModel(cfg Config, cfgFlagPath string, keys Keys, pool *nostr.Pool, kr no
 		}
 	}
 
+	// Resolve cache directory for attachments.
+	cacheDir := os.Getenv("XDG_CACHE_HOME")
+	if cacheDir == "" {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			cacheDir = filepath.Join(home, ".cache")
+		}
+	}
+	cacheDir = filepath.Join(cacheDir, "nitrous")
+
 	return model{
 		keymap:      keymap,
 		theme:       theme,
@@ -309,6 +323,7 @@ func newModel(cfg Config, cfgFlagPath string, keys Keys, pool *nostr.Pool, kr no
 		mdRender:       mdRender,
 		statusMsg:      fmt.Sprintf("connected to %d relays", len(cfg.Relays)),
 		logDir:         logDir,
+		cacheDir:       cacheDir,
 	}
 }
 

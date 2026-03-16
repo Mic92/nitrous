@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"fiatjaf.com/nostr"
 	"fiatjaf.com/nostr/nip17"
+	"fiatjaf.com/nostr/nip59"
 )
 
 // Bubbletea message types for NIP-17 DM events.
@@ -97,8 +98,20 @@ func subscribeDMCmd(pool *nostr.Pool, relays []string, kr nostr.Keyer, since nos
 	}
 }
 
+// fileDownloadRequestMsg is dispatched when a kind 15 file message is received.
+// It triggers an async download+decrypt in a separate Cmd.
+type fileDownloadRequestMsg struct {
+	rumor    nostr.Event
+	peer     string
+	eventID  string
+	isMine   bool
+	cacheDir string
+}
+
 // waitForDMEvent blocks on the NIP-17 DM channel and returns the next decrypted rumor.
-func waitForDMEvent(events <-chan nostr.Event, keys Keys) tea.Cmd {
+// Kind 14 rumors are returned as dmEventMsg (text). Kind 15 rumors are returned as
+// fileDownloadRequestMsg so the file can be downloaded without blocking the event loop.
+func waitForDMEvent(events <-chan nostr.Event, keys Keys, cacheDir string) tea.Cmd {
 	return func() tea.Msg {
 		rumor, ok := <-events
 		if !ok {
@@ -122,6 +135,17 @@ func waitForDMEvent(events <-chan nostr.Event, keys Keys) tea.Cmd {
 		if eventID == nostr.ZeroID.Hex() {
 			h := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%d:%s", rumor.PubKey.Hex(), peer, rumor.CreatedAt, rumor.Content)))
 			eventID = hex.EncodeToString(h[:])
+		}
+
+		// Kind 15 = file message — dispatch async download+decrypt.
+		if rumor.Kind == KindFileMessage {
+			return fileDownloadRequestMsg{
+				rumor:    rumor,
+				peer:     peer,
+				eventID:  eventID,
+				isMine:   rumor.PubKey == keys.PK,
+				cacheDir: cacheDir,
+			}
 		}
 
 		return dmEventMsg(ChatMessage{
@@ -167,6 +191,126 @@ func sendDM(pool *nostr.Pool, relays []string, recipientPK string, content strin
 			EventID:   hex.EncodeToString(h[:]),
 			IsMine:    true,
 		})
+	}
+}
+
+// handleFileDownloadCmd downloads and decrypts a kind 15 file message in the
+// background, returning a dmEventMsg with the display string.
+func handleFileDownloadCmd(req fileDownloadRequestMsg) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+		defer cancel()
+
+		content := handleFileMessage(ctx, req.rumor, req.cacheDir, req.peer)
+
+		return dmEventMsg(ChatMessage{
+			Author:    shortPK(req.rumor.PubKey.Hex()),
+			PubKey:    req.peer,
+			Content:   content,
+			Timestamp: req.rumor.CreatedAt,
+			EventID:   req.eventID,
+			IsMine:    req.isMine,
+		})
+	}
+}
+
+// sendFileMessageCmd publishes a NIP-17 kind 15 file message via gift wrap.
+// The URL is sent as the rumor content, and encryption/file metadata are
+// included as tags so the recipient can download and decrypt the file.
+func sendFileMessageCmd(pool *nostr.Pool, relays []string, recipientPK string, msg blossomUploadMsg, keys Keys, kr nostr.Keyer) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		recipient, err := nostr.PubKeyFromHex(recipientPK)
+		if err != nil {
+			return dmSendErrMsg{peerPK: recipientPK, err: fmt.Errorf("send file msg: invalid recipient pubkey: %w", err)}
+		}
+
+		ourPubkey, err := kr.GetPublicKey(ctx)
+		if err != nil {
+			return dmSendErrMsg{peerPK: recipientPK, err: fmt.Errorf("send file msg: get pubkey: %w", err)}
+		}
+
+		// Build kind 15 rumor with encryption metadata tags.
+		tags := nostr.Tags{
+			{"p", recipientPK},
+			{"file-type", msg.MimeType},
+			{"encryption-algorithm", "aes-gcm"},
+			{"decryption-key", msg.KeyHex},
+			{"decryption-nonce", msg.NonceHex},
+			{"x", msg.SHA256},
+			{"ox", msg.OxHex},
+		}
+
+		rumor := nostr.Event{
+			Kind:      KindFileMessage,
+			Content:   msg.URL,
+			Tags:      tags,
+			CreatedAt: nostr.Now(),
+			PubKey:    ourPubkey,
+		}
+		rumor.ID = rumor.GetID()
+
+		// Gift-wrap to ourselves.
+		toUs, err := nip59.GiftWrap(rumor, ourPubkey,
+			func(s string) (string, error) { return kr.Encrypt(ctx, s, ourPubkey) },
+			func(e *nostr.Event) error { return kr.SignEvent(ctx, e) },
+			nil,
+		)
+		if err != nil {
+			return dmSendErrMsg{peerPK: recipientPK, err: fmt.Errorf("send file msg: gift-wrap toUs: %w", err)}
+		}
+
+		// Gift-wrap to recipient.
+		toThem, err := nip59.GiftWrap(rumor, recipient,
+			func(s string) (string, error) { return kr.Encrypt(ctx, s, recipient) },
+			func(e *nostr.Event) error { return kr.SignEvent(ctx, e) },
+			nil,
+		)
+		if err != nil {
+			return dmSendErrMsg{peerPK: recipientPK, err: fmt.Errorf("send file msg: gift-wrap toThem: %w", err)}
+		}
+
+		// Publish to our relays.
+		publishToRelays(ctx, pool, relays, toUs, "toUs")
+
+		// Publish to their relays.
+		theirRelays := nip17.GetDMRelays(ctx, recipient, pool, relays)
+		if len(theirRelays) == 0 {
+			theirRelays = relays
+		}
+		publishToRelays(ctx, pool, theirRelays, toThem, "toThem")
+
+		// Return local echo.
+		ts := nostr.Now()
+		h := sha256.Sum256([]byte(fmt.Sprintf("local-file:%s:%s:%d:%s", keys.PK.Hex(), recipientPK, ts, msg.URL)))
+		displayContent := fmt.Sprintf("📎 %s", msg.URL)
+		return dmEventMsg(ChatMessage{
+			Author:    shortPK(keys.PK.Hex()),
+			PubKey:    recipientPK,
+			Content:   displayContent,
+			Timestamp: ts,
+			EventID:   hex.EncodeToString(h[:]),
+			IsMine:    true,
+		})
+	}
+}
+
+// publishToRelays connects to each relay and publishes the given event.
+// label is used in log messages to distinguish the publish target (e.g.
+// "toUs" vs "toThem").  Errors are logged but not returned because
+// partial publish success is acceptable for gift-wrapped DMs.
+func publishToRelays(ctx context.Context, pool *nostr.Pool, relays []string, event nostr.Event, label string) {
+	for _, url := range relays {
+		r, err := pool.EnsureRelay(url)
+		if err != nil {
+			log.Printf("publishToRelays[%s]: failed to connect to %s: %v", label, url, err)
+			continue
+		}
+		if err := r.Publish(ctx, event); err != nil {
+			log.Printf("publishToRelays[%s]: failed to publish to %s: %v", label, url, err)
+		}
 	}
 }
 
