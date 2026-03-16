@@ -270,7 +270,8 @@ func TestDownloadURL_PreservesExtension(t *testing.T) {
 	defer srv.Close()
 
 	cacheDir := t.TempDir()
-	localPath, err := downloadURL(context.Background(), srv.URL+"/my%20file.txt", cacheDir, "peer1234")
+	const fullPeerPK = "peer1234longkeythatshouldbetrimmed"
+	localPath, err := downloadURL(context.Background(), srv.URL+"/my%20file.txt", cacheDir, fullPeerPK)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,8 +280,12 @@ func TestDownloadURL_PreservesExtension(t *testing.T) {
 		t.Errorf("extension = %q, want .txt", ext)
 	}
 
-	// Verify truncated peer directory.
-	if !strings.Contains(localPath, "peer1234") {
-		t.Errorf("path %q does not contain truncated peer pk", localPath)
+	// Verify peer directory is truncated to first 8 characters.
+	wantDir := filepath.Join("attachments", fullPeerPK[:8])
+	if !strings.Contains(localPath, wantDir) {
+		t.Errorf("path %q does not contain truncated peer directory %q", localPath, wantDir)
+	}
+	if strings.Contains(localPath, fullPeerPK) {
+		t.Errorf("path %q contains full peer key; truncation not applied", localPath)
 	}
 }
