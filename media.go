@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"mime"
+	"strconv"
 	"net/http"
 	"net/url"
 	"os"
@@ -99,6 +100,16 @@ func downloadURL(ctx context.Context, rawURL, cacheDir, peerPK string) (string, 
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("download returned status %d", resp.StatusCode)
+	}
+
+	// Early rejection: if the server advertises a Content-Length that
+	// exceeds our limit, bail out immediately to avoid wasting bandwidth
+	// and disk I/O.  When the header is missing or unparseable we fall
+	// through to the existing LimitReader behaviour.
+	if cl := resp.Header.Get("Content-Length"); cl != "" {
+		if contentLen, parseErr := strconv.ParseInt(cl, 10, 64); parseErr == nil && contentLen > maxDownloadSize {
+			return "", fmt.Errorf("download exceeds maximum size of %d bytes (Content-Length: %d)", maxDownloadSize, contentLen)
+		}
 	}
 
 	if err := os.MkdirAll(downloadDir, 0o755); err != nil {
