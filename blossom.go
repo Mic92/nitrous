@@ -25,6 +25,10 @@ type blossomUploadMsg struct {
 	SHA256   string
 	Size     int64
 	MimeType string
+	// Encryption fields (populated when file was encrypted before upload).
+	KeyHex   string // hex-encoded AES-256 key
+	NonceHex string // hex-encoded GCM nonce
+	OxHex    string // hex-encoded SHA-256 of the plaintext (pre-encryption)
 }
 
 // blossomUploadErrMsg is returned when all upload attempts fail.
@@ -67,10 +71,18 @@ func blossomUploadCmd(servers []string, filePath string, keys Keys) tea.Cmd {
 			return blossomUploadErrMsg{fmt.Errorf("read file: %w", err)}
 		}
 
-		hash := sha256.Sum256(data)
-		hashHex := hex.EncodeToString(hash[:])
+		// Detect MIME type on the plaintext before encryption.
+		mimeType := detectContentType(filePath, data)
 
-		mimeType := http.DetectContentType(data)
+		// Encrypt the file before upload so only ciphertext leaves the machine.
+		enc, err := encryptFileForUpload(data)
+		if err != nil {
+			return blossomUploadErrMsg{fmt.Errorf("encrypt file: %w", err)}
+		}
+
+		// Hash the ciphertext for the Blossom auth event (blob identifier).
+		hash := sha256.Sum256(enc.Ciphertext)
+		hashHex := hex.EncodeToString(hash[:])
 
 		// Build kind 24242 auth event.
 		evt, err := buildBlossomAuthEvent(hashHex, keys)
@@ -100,7 +112,7 @@ func blossomUploadCmd(servers []string, filePath string, keys Keys) tea.Cmd {
 				defer wg.Done()
 
 				uploadURL := strings.TrimRight(server, "/") + "/upload"
-				req, err := http.NewRequest("PUT", uploadURL, bytes.NewReader(data))
+				req, err := http.NewRequest("PUT", uploadURL, bytes.NewReader(enc.Ciphertext))
 				if err != nil {
 					results <- result{server: server, err: err}
 					return
@@ -168,8 +180,11 @@ func blossomUploadCmd(servers []string, filePath string, keys Keys) tea.Cmd {
 		return blossomUploadMsg{
 			URL:      firstURL,
 			SHA256:   hashHex,
-			Size:     int64(len(data)),
+			Size:     int64(len(enc.Ciphertext)),
 			MimeType: mimeType,
+			KeyHex:   enc.KeyHex,
+			NonceHex: enc.NonceHex,
+			OxHex:    enc.OxHex,
 		}
 	}
 }
