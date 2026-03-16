@@ -1,10 +1,7 @@
 package main
 
 import (
-	"bytes"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,6 +15,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"fiatjaf.com/nostr"
 )
+
+// maxUploadSize caps plaintext files before reading them into memory.
+// Subtracting 16 bytes (the AES-GCM authentication tag) ensures the
+// resulting ciphertext still fits within downloadURL's maxDownloadSize
+// (50 MiB) on the receiving side.
+const maxUploadSize = 50<<20 - 16 // 50 MiB minus GCM tag overhead
 
 // blossomUploadMsg is returned on successful upload.
 type blossomUploadMsg struct {
@@ -66,26 +69,29 @@ func blossomUploadCmd(servers []string, filePath string, keys Keys) tea.Cmd {
 			filePath = home + filePath[1:]
 		}
 
-		data, err := os.ReadFile(filePath)
+		// Reject oversized files before reading them into memory.
+		info, err := os.Stat(filePath)
 		if err != nil {
-			return blossomUploadErrMsg{fmt.Errorf("read file: %w", err)}
+			return blossomUploadErrMsg{fmt.Errorf("stat file: %w", err)}
+		}
+		if info.Size() > maxUploadSize {
+			return blossomUploadErrMsg{fmt.Errorf("file too large (%d bytes, max %d)", info.Size(), maxUploadSize)}
 		}
 
-		// Detect MIME type on the plaintext before encryption.
-		mimeType := detectContentType(filePath, data)
+		// Detect MIME type on the plaintext before encryption. Read only
+		// the header bytes needed for content sniffing (512 B).
+		mimeType := detectContentTypeFromFile(filePath)
 
-		// Encrypt the file before upload so only ciphertext leaves the machine.
-		enc, err := encryptFileForUpload(data)
+		// Encrypt to a temp file — reads the plaintext internally and frees
+		// it before returning, so the caller never holds both buffers.
+		enc, err := encryptFileForUpload(filePath)
 		if err != nil {
 			return blossomUploadErrMsg{fmt.Errorf("encrypt file: %w", err)}
 		}
-
-		// Hash the ciphertext for the Blossom auth event (blob identifier).
-		hash := sha256.Sum256(enc.Ciphertext)
-		hashHex := hex.EncodeToString(hash[:])
+		defer func() { _ = os.Remove(enc.CiphertextPath) }()
 
 		// Build kind 24242 auth event.
-		evt, err := buildBlossomAuthEvent(hashHex, keys)
+		evt, err := buildBlossomAuthEvent(enc.SHA256Hex, keys)
 		if err != nil {
 			return blossomUploadErrMsg{fmt.Errorf("sign auth: %w", err)}
 		}
@@ -112,11 +118,19 @@ func blossomUploadCmd(servers []string, filePath string, keys Keys) tea.Cmd {
 				defer wg.Done()
 
 				uploadURL := strings.TrimRight(server, "/") + "/upload"
-				req, err := http.NewRequest("PUT", uploadURL, bytes.NewReader(enc.Ciphertext))
+				f, err := os.Open(enc.CiphertextPath)
+				if err != nil {
+					results <- result{server: server, err: fmt.Errorf("open ciphertext: %w", err)}
+					return
+				}
+				defer func() { _ = f.Close() }()
+
+				req, err := http.NewRequest("PUT", uploadURL, f)
 				if err != nil {
 					results <- result{server: server, err: err}
 					return
 				}
+				req.ContentLength = enc.Size
 				req.Header.Set("Authorization", authHeader)
 				req.Header.Set("Content-Type", mimeType)
 
@@ -144,10 +158,10 @@ func blossomUploadCmd(servers []string, filePath string, keys Keys) tea.Cmd {
 				}
 				if err := json.Unmarshal(body, &respData); err != nil {
 					// Fallback: construct URL from server + hash.
-					respData.URL = strings.TrimRight(server, "/") + "/" + hashHex
+					respData.URL = strings.TrimRight(server, "/") + "/" + enc.SHA256Hex
 				}
 				if respData.URL == "" {
-					respData.URL = strings.TrimRight(server, "/") + "/" + hashHex
+					respData.URL = strings.TrimRight(server, "/") + "/" + enc.SHA256Hex
 				}
 
 				results <- result{server: server, url: respData.URL}
@@ -179,8 +193,8 @@ func blossomUploadCmd(servers []string, filePath string, keys Keys) tea.Cmd {
 
 		return blossomUploadMsg{
 			URL:      firstURL,
-			SHA256:   hashHex,
-			Size:     int64(len(enc.Ciphertext)),
+			SHA256:   enc.SHA256Hex,
+			Size:     enc.Size,
 			MimeType: mimeType,
 			KeyHex:   enc.KeyHex,
 			NonceHex: enc.NonceHex,

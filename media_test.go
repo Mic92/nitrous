@@ -117,17 +117,28 @@ func TestHandleFileMessage_Encrypted(t *testing.T) {
 
 	plaintext := []byte("secret image data 🔐")
 
-	enc, err := encryptFileForUpload(plaintext)
-	if err != nil {
+	srcPath := filepath.Join(t.TempDir(), "input.bin")
+	if err := os.WriteFile(srcPath, plaintext, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	xHash := sha256.Sum256(enc.Ciphertext)
+	enc, err := encryptFileForUpload(srcPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Remove(enc.CiphertextPath) }()
+
+	ciphertext, err := os.ReadFile(enc.CiphertextPath)
+	if err != nil {
+		t.Fatalf("reading ciphertext: %v", err)
+	}
+
+	xHash := sha256.Sum256(ciphertext)
 	xHex := hex.EncodeToString(xHash[:])
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(enc.Ciphertext)
+		_, _ = w.Write(ciphertext)
 	}))
 	defer srv.Close()
 

@@ -9,22 +9,39 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"syscall"
 
 	"fiatjaf.com/nostr"
 )
 
 // encryptedFile holds the result of encrypting a file for Blossom upload.
+// Ciphertext is written to a temporary file (CiphertextPath) instead of
+// being held in memory, so the plaintext buffer can be freed immediately.
 type encryptedFile struct {
-	Ciphertext []byte // AES-GCM encrypted content
-	KeyHex     string // hex-encoded 256-bit AES key
-	NonceHex   string // hex-encoded 12-byte GCM nonce
-	OxHex      string // hex-encoded SHA-256 of the plaintext (pre-encryption hash)
+	CiphertextPath string // path to temp file containing the ciphertext
+	Size           int64  // size of the ciphertext in bytes
+	SHA256Hex      string // hex-encoded SHA-256 of the ciphertext
+	KeyHex         string // hex-encoded 256-bit AES key
+	NonceHex       string // hex-encoded 12-byte GCM nonce
+	OxHex          string // hex-encoded SHA-256 of the plaintext (pre-encryption hash)
 }
 
-// encryptFileForUpload encrypts plaintext with a fresh AES-256-GCM key and
-// nonce. Returns the ciphertext and all parameters needed for the recipient
-// to decrypt (transmitted inside the encrypted kind 15 rumor tags).
-func encryptFileForUpload(plaintext []byte) (*encryptedFile, error) {
+// encryptFileForUpload mmaps the file at srcPath, encrypts it with a fresh
+// AES-256-GCM key and nonce, and writes the ciphertext to a temporary file.
+// The mmap is released immediately after gcm.Seal so plaintext pages are
+// returned to the OS while the ciphertext is written to disk. The caller is
+// responsible for removing CiphertextPath when done.
+func encryptFileForUpload(srcPath string) (*encryptedFile, error) {
+	plaintext, err := mmapFile(srcPath)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if len(plaintext) > 0 {
+			_ = syscall.Munmap(plaintext)
+		}
+	}()
+
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
 		return nil, fmt.Errorf("generating AES key: %w", err)
@@ -45,16 +62,64 @@ func encryptFileForUpload(plaintext []byte) (*encryptedFile, error) {
 		return nil, fmt.Errorf("creating GCM: %w", err)
 	}
 
-	ciphertext := gcm.Seal(nil, nonce, plaintext, nil)
-
 	oxHash := sha256.Sum256(plaintext)
+	ciphertext := gcm.Seal(nil, nonce, plaintext, nil)
+	ctHash := sha256.Sum256(ciphertext)
+
+	ctPath, ctSize, err := writeTemp(ciphertext)
+	if err != nil {
+		return nil, err
+	}
 
 	return &encryptedFile{
-		Ciphertext: ciphertext,
-		KeyHex:     hex.EncodeToString(key),
-		NonceHex:   hex.EncodeToString(nonce),
-		OxHex:      hex.EncodeToString(oxHash[:]),
+		CiphertextPath: ctPath,
+		Size:           ctSize,
+		SHA256Hex:      hex.EncodeToString(ctHash[:]),
+		KeyHex:         hex.EncodeToString(key),
+		NonceHex:       hex.EncodeToString(nonce),
+		OxHex:          hex.EncodeToString(oxHash[:]),
 	}, nil
+}
+
+// mmapFile maps a file read-only into memory via the page cache.
+// Returns an empty slice (not mmap-backed) for zero-length files.
+func mmapFile(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", path, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat %s: %w", path, err)
+	}
+
+	if fi.Size() == 0 {
+		return []byte{}, nil
+	}
+
+	return syscall.Mmap(int(f.Fd()), 0, int(fi.Size()), syscall.PROT_READ, syscall.MAP_PRIVATE)
+}
+
+// writeTemp writes data to a new temporary file and returns its path and size.
+// The caller is responsible for removing the file.
+func writeTemp(data []byte) (string, int64, error) {
+	tmp, err := os.CreateTemp("", "nitrous-upload-*")
+	if err != nil {
+		return "", 0, fmt.Errorf("creating temp file: %w", err)
+	}
+	name := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(name)
+		return "", 0, fmt.Errorf("writing temp file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(name)
+		return "", 0, fmt.Errorf("closing temp file: %w", err)
+	}
+	return name, int64(len(data)), nil
 }
 
 // decryptAESGCM decrypts ciphertext using AES-GCM with the given key and
@@ -122,12 +187,16 @@ func decryptFileInPlace(filePath string, tags nostr.Tags) error {
 		return err
 	}
 
-	ciphertext, err := os.ReadFile(filePath)
+	ciphertext, err := mmapFile(filePath)
 	if err != nil {
 		return fmt.Errorf("reading encrypted file: %w", err)
 	}
 
 	plaintext, err := decryptAESGCM(key, nonce, ciphertext)
+	// Unmap before writing back to the same file.
+	if len(ciphertext) > 0 {
+		_ = syscall.Munmap(ciphertext)
+	}
 	if err != nil {
 		return err
 	}

@@ -18,14 +18,31 @@ func TestEncryptFileForUpload_RoundTrip(t *testing.T) {
 
 	plaintext := []byte("confidential file content 🔒")
 
-	enc, err := encryptFileForUpload(plaintext)
+	srcPath := filepath.Join(t.TempDir(), "input.bin")
+	if err := os.WriteFile(srcPath, plaintext, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	enc, err := encryptFileForUpload(srcPath)
 	if err != nil {
 		t.Fatalf("encryptFileForUpload: %v", err)
 	}
+	defer func() { _ = os.Remove(enc.CiphertextPath) }()
+
+	// Read ciphertext from temp file.
+	ciphertext, err := os.ReadFile(enc.CiphertextPath)
+	if err != nil {
+		t.Fatalf("reading ciphertext file: %v", err)
+	}
 
 	// Ciphertext must differ from plaintext.
-	if string(enc.Ciphertext) == string(plaintext) {
+	if string(ciphertext) == string(plaintext) {
 		t.Fatal("ciphertext equals plaintext")
+	}
+
+	// Size must match file contents.
+	if enc.Size != int64(len(ciphertext)) {
+		t.Errorf("Size = %d, want %d", enc.Size, len(ciphertext))
 	}
 
 	// Decrypt and verify round-trip.
@@ -39,7 +56,7 @@ func TestEncryptFileForUpload_RoundTrip(t *testing.T) {
 		t.Fatalf("decoding nonce: %v", err)
 	}
 
-	got, err := decryptAESGCM(key, nonce, enc.Ciphertext)
+	got, err := decryptAESGCM(key, nonce, ciphertext)
 	if err != nil {
 		t.Fatalf("decryptAESGCM: %v", err)
 	}
@@ -149,14 +166,26 @@ func TestDecryptFileInPlace_OxMismatch(t *testing.T) {
 
 	plaintext := []byte("original content")
 
-	enc, err := encryptFileForUpload(plaintext)
-	if err != nil {
+	dir := t.TempDir()
+	srcPath := filepath.Join(dir, "input.bin")
+	if err := os.WriteFile(srcPath, plaintext, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	dir := t.TempDir()
+	enc, err := encryptFileForUpload(srcPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Remove(enc.CiphertextPath) }()
+
+	// Copy ciphertext from temp file to test location.
+	ciphertext, err := os.ReadFile(enc.CiphertextPath)
+	if err != nil {
+		t.Fatalf("reading ciphertext: %v", err)
+	}
+
 	fpath := filepath.Join(dir, "encrypted.bin")
-	if err := os.WriteFile(fpath, enc.Ciphertext, 0o644); err != nil {
+	if err := os.WriteFile(fpath, ciphertext, 0o644); err != nil {
 		t.Fatal(err)
 	}
 

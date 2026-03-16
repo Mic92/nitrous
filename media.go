@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -38,10 +40,48 @@ func detectContentType(filePath string, data []byte) string {
 	return http.DetectContentType(data)
 }
 
+// detectContentTypeFromFile is like detectContentType but reads only the
+// first 512 bytes for sniffing, avoiding loading the entire file.
+func detectContentTypeFromFile(filePath string) string {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return detectContentType(filePath, nil)
+	}
+	defer func() { _ = f.Close() }()
+
+	buf := make([]byte, 512)
+	n, _ := f.Read(buf)
+	return detectContentType(filePath, buf[:n])
+}
+
 // downloadURL downloads a URL to the per-peer attachments directory.
 // Returns the local file path. Files are stored in
 // <cacheDir>/attachments/<peerPK>/.
 func downloadURL(ctx context.Context, rawURL, cacheDir, peerPK string) (string, error) {
+	// Extract filename from URL path.
+	filename := "attachment"
+	if parsed, parseErr := url.Parse(rawURL); parseErr == nil {
+		filename = path.Base(parsed.Path)
+	}
+	filename = sanitizeFilename(filename)
+	ext := filepath.Ext(filename)
+
+	// Truncate peer pubkey to 8 hex chars for shorter directory names.
+	dirPK := peerPK
+	if len(dirPK) > 8 {
+		dirPK = dirPK[:8]
+	}
+	downloadDir := filepath.Join(cacheDir, "attachments", dirPK)
+
+	// Use a hash of the URL as a stable cache key so the same file
+	// is not downloaded twice.
+	urlHash := sha256.Sum256([]byte(rawURL))
+	cachedName := hex.EncodeToString(urlHash[:8]) + ext
+	cachedPath := filepath.Join(downloadDir, cachedName)
+	if _, err := os.Stat(cachedPath); err == nil {
+		return cachedPath, nil
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -61,36 +101,15 @@ func downloadURL(ctx context.Context, rawURL, cacheDir, peerPK string) (string, 
 		return "", fmt.Errorf("download returned status %d", resp.StatusCode)
 	}
 
-	// Extract filename from URL path.
-	filename := "attachment"
-	if parsed, parseErr := url.Parse(rawURL); parseErr == nil {
-		filename = path.Base(parsed.Path)
-	}
-	filename = sanitizeFilename(filename)
-
-	// Truncate peer pubkey to 8 hex chars for shorter directory names.
-	// Collision-resistant enough for a local cache directory.
-	dirPK := peerPK
-	if len(dirPK) > 8 {
-		dirPK = dirPK[:8]
-	}
-	downloadDir := filepath.Join(cacheDir, "attachments", dirPK)
 	if err := os.MkdirAll(downloadDir, 0o755); err != nil {
 		return "", fmt.Errorf("creating attachments dir: %w", err)
 	}
 
-	// Use a short random suffix instead of the full original filename,
-	// which is often a long SHA-256 hash from Blossom URLs.
-	ext := filepath.Ext(filename)
-	pattern := "*" + ext
-
-	f, err := os.CreateTemp(downloadDir, pattern)
+	f, err := os.Create(cachedPath)
 	if err != nil {
 		return "", fmt.Errorf("creating file: %w", err)
 	}
 	defer func() { _ = f.Close() }()
-
-	destPath := f.Name()
 
 	// Limit download size to prevent disk exhaustion.
 	limited := io.LimitReader(resp.Body, maxDownloadSize+1)
@@ -98,17 +117,17 @@ func downloadURL(ctx context.Context, rawURL, cacheDir, peerPK string) (string, 
 	n, err := io.Copy(f, limited)
 	if err != nil {
 		_ = f.Close()
-		_ = os.Remove(destPath)
+		_ = os.Remove(cachedPath)
 		return "", fmt.Errorf("writing file: %w", err)
 	}
 
 	if n > maxDownloadSize {
 		_ = f.Close()
-		_ = os.Remove(destPath)
+		_ = os.Remove(cachedPath)
 		return "", fmt.Errorf("download exceeds maximum size of %d bytes", maxDownloadSize)
 	}
 
-	return destPath, nil
+	return cachedPath, nil
 }
 
 // unsafeFilenameChars matches characters that are unsafe in filenames across
