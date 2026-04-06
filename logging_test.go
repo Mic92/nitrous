@@ -161,6 +161,37 @@ func TestLoadLargeFile(t *testing.T) {
 	}
 }
 
+func TestLoadLongLine(t *testing.T) {
+	// Regression: bufio.Scanner defaults to a 64 KiB max token. Chat messages
+	// (long pastes, base64 blobs) can exceed that. The scanner used to silently
+	// stop at the long line, dropping it and everything after.
+	dir := t.TempDir()
+
+	longContent := strings.Repeat("x", 100*1024) // 100 KiB > 64 KiB default
+	msgs := []ChatMessage{
+		{Timestamp: nostr.Timestamp(1700000001), EventID: "aaaaaaaa11111111", PubKey: "1111111111111111", Author: "alice", Content: "before"},
+		{Timestamp: nostr.Timestamp(1700000002), EventID: "bbbbbbbb22222222", PubKey: "2222222222222222", Author: "bob", Content: longContent},
+		{Timestamp: nostr.Timestamp(1700000003), EventID: "cccccccc33333333", PubKey: "3333333333333333", Author: "carol", Content: "after"},
+	}
+	for _, m := range msgs {
+		appendLogEntry(dir, "channel", "longline", m, m.Author)
+	}
+
+	loaded, err := loadLogHistory(dir, "channel", "longline", 100)
+	if err != nil {
+		t.Fatalf("loadLogHistory: %v", err)
+	}
+	if len(loaded) != 3 {
+		t.Fatalf("expected 3 messages, got %d (long line likely truncated scanner)", len(loaded))
+	}
+	if loaded[1].Content != longContent {
+		t.Errorf("long content mismatch: got %d bytes, want %d", len(loaded[1].Content), len(longContent))
+	}
+	if loaded[2].Content != "after" {
+		t.Errorf("message after long line lost: got %q", loaded[2].Content)
+	}
+}
+
 func TestLoadNonExistentFile(t *testing.T) {
 	dir := t.TempDir()
 	loaded, err := loadLogHistory(dir, "channel", "noroom", 100)
