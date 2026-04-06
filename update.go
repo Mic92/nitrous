@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"fiatjaf.com/nostr"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	"fiatjaf.com/nostr"
 )
 
 const seenEventsTTL = 30 * time.Minute
@@ -81,8 +81,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleGroupMeta(msg)
 	case groupCreatedMsg:
 		return m.handleGroupCreated(msg)
-	case groupInviteCreatedMsg:
-		return m.handleGroupInviteCreated(msg)
 	case groupJoinedMsg:
 		return m.handleGroupJoined(msg)
 	case profileResolvedMsg:
@@ -518,13 +516,6 @@ func (m *model) handleGroupCreated(msg groupCreatedMsg) (tea.Model, tea.Cmd) {
 		editGroupMetadataCmd(m.pool, msg.RelayURL, msg.GroupID, map[string]string{"closed": ""}, m.groupRecentIDs[gk], m.keys),
 		publishSimpleGroupsListCmd(m.pool, m.relays, m.allGroups(), m.keys),
 	)
-}
-
-func (m *model) handleGroupInviteCreated(msg groupInviteCreatedMsg) (tea.Model, tea.Cmd) {
-	log.Printf("groupInviteCreatedMsg: relay=%s group=%s code=%s", msg.RelayURL, msg.GroupID, msg.Code)
-	host := strings.TrimPrefix(msg.RelayURL, "wss://")
-	m.addSystemMsg(fmt.Sprintf("invite code: %s  join with: /join %s'%s", msg.Code, host, msg.GroupID))
-	return m, nil
 }
 
 func (m *model) handleGroupJoined(msg groupJoinedMsg) (tea.Model, tea.Cmd) {
