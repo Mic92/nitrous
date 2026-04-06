@@ -1,14 +1,19 @@
 package main
 
-import "testing"
+import (
+	"encoding/base64"
+	"strings"
+	"testing"
+	"unicode/utf8"
+)
 
 func TestSliceByColumns(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		fromCol  int
-		toCol    int
-		want     string
+		name    string
+		input   string
+		fromCol int
+		toCol   int
+		want    string
 	}{
 		// ASCII baseline.
 		{"ascii full", "hello", 0, 5, "hello"},
@@ -69,7 +74,7 @@ func TestSliceByColumnsValidUTF8(t *testing.T) {
 		for from := -1; from <= w+1; from++ {
 			for to := from; to <= w+1; to++ {
 				got := sliceByColumns(s, from, to)
-				if !validUTF8(got) {
+				if !utf8.ValidString(got) {
 					t.Errorf("sliceByColumns(%q, %d, %d) = %q: invalid UTF-8",
 						s, from, to, got)
 				}
@@ -78,11 +83,57 @@ func TestSliceByColumnsValidUTF8(t *testing.T) {
 	}
 }
 
-func validUTF8(s string) bool {
-	for _, r := range s {
-		if r == '\uFFFD' {
-			return false
+func TestOSC52Sequence(t *testing.T) {
+	t.Run("plain ASCII round-trips through base64", func(t *testing.T) {
+		input := "hello world"
+		seq := osc52Sequence(input)
+
+		// Expected exact format: ESC ] 52 ; c ; <base64> BEL
+		// We use BEL (\a) as the terminator rather than ST (ESC \)
+		// because it is a single byte and matches what
+		// charmbracelet/x/ansi emits — broadly compatible with
+		// xterm, kitty, iTerm2, alacritty, foot, wezterm.
+		wantPrefix := "\x1b]52;c;"
+		wantSuffix := "\a"
+
+		if !strings.HasPrefix(seq, wantPrefix) {
+			t.Fatalf("missing OSC 52 prefix: got %q", seq)
 		}
-	}
-	return true
+		if !strings.HasSuffix(seq, wantSuffix) {
+			t.Fatalf("missing BEL terminator: got %q", seq)
+		}
+
+		payload := seq[len(wantPrefix) : len(seq)-len(wantSuffix)]
+		decoded, err := base64.StdEncoding.DecodeString(payload)
+		if err != nil {
+			t.Fatalf("payload is not valid base64: %v (payload=%q)", err, payload)
+		}
+		if string(decoded) != input {
+			t.Errorf("round-trip mismatch: got %q want %q", decoded, input)
+		}
+	})
+
+	t.Run("control bytes in input do not leak into the framing", func(t *testing.T) {
+		// BEL and ESC inside the text would terminate the OSC
+		// sequence early or start a new one if emitted raw.
+		input := "foo\abar\x1bbaz"
+		seq := osc52Sequence(input)
+
+		// Strip the single allowed ESC (prefix) and single BEL
+		// (terminator); the remainder must be pure base64.
+		inner := strings.TrimPrefix(seq, "\x1b]52;c;")
+		inner = strings.TrimSuffix(inner, "\a")
+
+		if strings.ContainsAny(inner, "\a\x1b") {
+			t.Errorf("raw control bytes leaked into payload: %q", inner)
+		}
+
+		decoded, err := base64.StdEncoding.DecodeString(inner)
+		if err != nil {
+			t.Fatalf("payload is not valid base64: %v", err)
+		}
+		if string(decoded) != input {
+			t.Errorf("round-trip mismatch: got %q want %q", decoded, input)
+		}
+	})
 }

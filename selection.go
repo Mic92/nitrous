@@ -1,8 +1,8 @@
 package main
 
 import (
-	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -199,10 +199,25 @@ func copyToClipboard(text string) tea.Cmd {
 		}
 
 		// Fallback: OSC 52 (terminal clipboard escape sequence).
-		fmt.Printf("\033]52;c;%s\a", text)
+		//
+		// We write directly to os.Stdout because bubbletea v1 has
+		// no sanctioned way to emit raw OSC sequences: tea.Printf
+		// appends a newline and is suppressed under altscreen.
+		// Clipboard support landed in bubbletea v2 (beta).
+		// TODO: switch to tea.SetClipboard once we move to v2.
+		_, _ = os.Stdout.WriteString(osc52Sequence(text))
 		log.Printf("clipboard: sent %d bytes via OSC 52", len(text))
 		return clipboardCopiedMsg{}
 	}
+}
+
+// osc52Sequence builds an OSC 52 escape sequence for setting the
+// system clipboard. The payload is base64-encoded so that BEL, ESC
+// or non-ASCII bytes in text cannot terminate the sequence early or
+// confuse the terminal parser. Uses BEL as the terminator (broadly
+// compatible; matches charmbracelet/x/ansi).
+func osc52Sequence(text string) string {
+	return ansi.SetSystemClipboard(text)
 }
 
 type clipboardCopiedMsg struct{}
