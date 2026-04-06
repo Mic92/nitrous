@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/mattn/go-runewidth"
 )
 
 // applySelectionHighlight overlays reverse-video on the selected region
@@ -32,26 +33,26 @@ func (m *model) applySelectionHighlight(vp string) string {
 			continue
 		}
 		plain := ansi.Strip(vpLines[y])
+		width := stringColumnWidth(plain)
 		var from, to int
 		if sy == ey {
-			from = clampCol(sx, len(plain))
-			to = clampCol(ex, len(plain))
+			from, to = sx, ex
 		} else if y == sy {
-			from = clampCol(sx, len(plain))
-			to = len(plain)
+			from, to = sx, width
 		} else if y == ey {
-			from = 0
-			to = clampCol(ex, len(plain))
+			from, to = 0, ex
 		} else {
-			from = 0
-			to = len(plain)
+			from, to = 0, width
 		}
-		if from >= to {
+		mid := sliceByColumns(plain, from, to)
+		if mid == "" {
 			continue
 		}
 		// Rebuild line: prefix + highlighted + suffix (using plain text
 		// to avoid ANSI nesting issues).
-		vpLines[y] = plain[:from] + m.theme.Selection.Render(plain[from:to]) + plain[to:]
+		pre := sliceByColumns(plain, 0, from)
+		suf := sliceByColumns(plain, to, width)
+		vpLines[y] = pre + m.theme.Selection.Render(mid) + suf
 	}
 	return strings.Join(vpLines, "\n")
 }
@@ -94,20 +95,17 @@ func (m *model) extractSelectedText() string {
 			continue
 		}
 		line := ansi.Strip(vpLines[y])
+		width := stringColumnWidth(line)
 
 		if startY == endY {
 			// Single line selection.
-			from := clampCol(startX, len(line))
-			to := clampCol(endX, len(line))
-			if from < to {
-				selected = append(selected, line[from:to])
+			if s := sliceByColumns(line, startX, endX); s != "" {
+				selected = append(selected, s)
 			}
 		} else if y == startY {
-			from := clampCol(startX, len(line))
-			selected = append(selected, line[from:])
+			selected = append(selected, sliceByColumns(line, startX, width))
 		} else if y == endY {
-			to := clampCol(endX, len(line))
-			selected = append(selected, line[:to])
+			selected = append(selected, sliceByColumns(line, 0, endX))
 		} else {
 			selected = append(selected, line)
 		}
@@ -116,14 +114,54 @@ func (m *model) extractSelectedText() string {
 	return strings.Join(selected, "\n")
 }
 
-func clampCol(x, lineLen int) int {
-	if x < 0 {
-		return 0
+// sliceByColumns returns the substring of s spanning terminal columns
+// [fromCol, toCol). Unlike s[from:to], this maps display columns to byte
+// offsets so multi-byte runes (é, CJK, emoji) are not split mid-sequence.
+//
+// Out-of-range columns are clamped. If a column boundary falls inside a
+// wide rune (e.g. column 1 of a 2-column CJK char), both fromCol and toCol
+// snap right to the next rune boundary. Snapping the same direction ensures
+// sliceByColumns(s, 0, k) + sliceByColumns(s, k, width) == s for all k,
+// which applySelectionHighlight relies on to reassemble lines.
+//
+// Limitation: operates at the rune level using runewidth. Grapheme
+// clusters that span multiple runes (flag emoji, ZWJ sequences, combining
+// marks) may still be split at rune boundaries. This is acceptable for
+// terminal selection — the output remains valid UTF-8 even if a cluster
+// is visually broken.
+func sliceByColumns(s string, fromCol, toCol int) string {
+	if fromCol < 0 {
+		fromCol = 0
 	}
-	if x > lineLen {
-		return lineLen
+	if toCol <= fromCol {
+		return ""
 	}
-	return x
+
+	var (
+		col      int  // current column position
+		fromByte = -1 // byte offset where fromCol lands
+		toByte   = len(s)
+	)
+	for i, r := range s {
+		if fromByte < 0 && col >= fromCol {
+			fromByte = i
+		}
+		if col >= toCol {
+			toByte = i
+			break
+		}
+		col += runewidth.RuneWidth(r)
+	}
+	if fromByte < 0 {
+		// fromCol is at or past the end of the string.
+		return ""
+	}
+	return s[fromByte:toByte]
+}
+
+// stringColumnWidth returns the display width of s in terminal columns.
+func stringColumnWidth(s string) int {
+	return runewidth.StringWidth(s)
 }
 
 // copyToClipboard copies text to the system clipboard.
