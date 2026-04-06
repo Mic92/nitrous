@@ -39,7 +39,7 @@ func (m *model) updateSuggestions() {
 	switch {
 	case len(tokens) == 1 && !trailingSpace:
 		// Partial top-level command: /he → /help
-		commands := []string{"/channel", "/join", "/dm", "/me", "/room", "/delete", "/group", "/invite", "/leave", "/help"}
+		commands := []string{"/channel", "/join", "/dm", "/me", "/room", "/delete", "/group", "/invite", "/leave", "/exit", "/help"}
 		prefix := strings.ToLower(tokens[0])
 		for _, c := range commands {
 			if strings.HasPrefix(c, prefix) && c != prefix {

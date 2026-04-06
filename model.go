@@ -177,6 +177,16 @@ func (m *model) cancelAllRoomSubs() {
 	}
 }
 
+// quit cancels all subscriptions and returns the quit command. Used by
+// the ctrl+c keybinding and the /exit slash command.
+func (m *model) quit() (tea.Model, tea.Cmd) {
+	m.cancelAllRoomSubs()
+	if m.dmCancel != nil {
+		m.dmCancel()
+	}
+	return m, tea.Quit
+}
+
 // isChannelSelected returns true if the active sidebar item is a channel.
 func (m *model) isChannelSelected() bool {
 	item := m.activeSidebarItem()

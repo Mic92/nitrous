@@ -776,11 +776,7 @@ func (m *model) handleKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// Dismiss QR overlay on any key (except quit which still quits).
 	if m.qrOverlay != "" {
 		if key.Matches(msg, m.keymap.Quit) {
-			m.cancelAllRoomSubs()
-			if m.dmCancel != nil {
-				m.dmCancel()
-			}
-			return m, tea.Quit
+			return m.quit()
 		}
 		m.qrOverlay = ""
 		return m, nil
@@ -909,11 +905,7 @@ func (m *model) handleKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	switch {
 	case key.Matches(msg, m.keymap.Quit):
-		m.cancelAllRoomSubs()
-		if m.dmCancel != nil {
-			m.dmCancel()
-		}
-		return m, tea.Quit
+		return m.quit()
 
 	case key.Matches(msg, m.keymap.ChannelSelector):
 		// Open channel selector popup
