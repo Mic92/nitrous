@@ -3,7 +3,7 @@ package main
 import (
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // updateSuggestions generates context-aware autocomplete suggestions based on
@@ -228,7 +228,7 @@ func (m *model) viewAutocomplete() string {
 	if len(m.acSuggestions) == 0 {
 		return ""
 	}
-	maxWidth := m.viewport.Width
+	maxWidth := m.viewport.Width()
 
 	// Pre-render all items so we know their widths.
 	rendered := make([]string, len(m.acSuggestions))

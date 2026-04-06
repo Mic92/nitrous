@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
 	"fiatjaf.com/nostr"
-	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 const seenEventsTTL = 30 * time.Minute
@@ -45,8 +45,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.BlurMsg:
 		m.focused = false
 		return m, nil
-	case tea.MouseMsg:
-		return m.handleMouse(msg)
+	case tea.MouseWheelMsg:
+		return m.handleMouseWheel(msg)
+	case tea.MouseClickMsg:
+		return m.handleMouseClick(msg)
+	case tea.MouseMotionMsg:
+		return m.handleMouseMotion(msg)
+	case tea.MouseReleaseMsg:
+		return m.handleMouseRelease(msg)
 	case channelCreatedMsg:
 		return m.handleChannelCreated(msg)
 	case channelMetaMsg:
@@ -105,7 +111,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleNIP51PublishResult(msg)
 	case clipboardCopiedMsg:
 		return m, nil
-	case tea.KeyMsg:
+	case tea.PasteMsg:
+		return m.handlePaste(msg)
+	case tea.KeyPressMsg:
 		return m.handleKeyMsg(msg)
 	}
 	return m.handleInputUpdate(msg)
@@ -119,50 +127,70 @@ func (m *model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	return m, tea.ClearScreen
 }
 
-func (m *model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+func (m *model) handleMouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 	switch msg.Button {
-	case tea.MouseButtonWheelUp:
+	case tea.MouseWheelUp:
 		m.viewport.ScrollUp(3)
-		return m, nil
-	case tea.MouseButtonWheelDown:
+	case tea.MouseWheelDown:
 		m.viewport.ScrollDown(3)
-		return m, nil
-	case tea.MouseButtonLeft:
-		switch msg.Action {
-		case tea.MouseActionPress:
-			if msg.X < m.sidebarWidth() {
-				if idx, ok := m.sidebarItemAt(msg.Y); ok {
-					m.activeItem = idx
-					m.clearUnread()
-					m.updateViewport()
-				}
-			} else {
-				m.selecting = true
-				m.selectFrom = [2]int{msg.X, msg.Y}
-				m.selectTo = [2]int{msg.X, msg.Y}
-			}
-		case tea.MouseActionMotion:
-			if m.selecting {
-				m.selectTo = [2]int{msg.X, msg.Y}
-			}
-		case tea.MouseActionRelease:
-			if m.selecting {
-				m.selecting = false
-				m.selectTo = [2]int{msg.X, msg.Y}
-				if text := m.extractSelectedText(); text != "" {
-					return m, copyToClipboard(text)
-				}
-			}
-		}
-		return m, nil
-	case tea.MouseButtonNone:
-		// Motion with no button — clear selection.
-		if msg.Action == tea.MouseActionMotion && m.selecting {
-			m.selectTo = [2]int{msg.X, msg.Y}
-		}
-		return m, nil
 	}
 	return m, nil
+}
+
+func (m *model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
+	if msg.Button != tea.MouseLeft {
+		return m, nil
+	}
+	if msg.X < m.sidebarWidth() {
+		if idx, ok := m.sidebarItemAt(msg.Y); ok {
+			m.activeItem = idx
+			m.clearUnread()
+			m.updateViewport()
+		}
+	} else {
+		m.selecting = true
+		m.selectFrom = [2]int{msg.X, msg.Y}
+		m.selectTo = [2]int{msg.X, msg.Y}
+	}
+	return m, nil
+}
+
+func (m *model) handleMouseMotion(msg tea.MouseMotionMsg) (tea.Model, tea.Cmd) {
+	// In v2 motion messages don't carry button state; rely on m.selecting
+	// which is set on left-click and cleared on release.
+	if m.selecting {
+		m.selectTo = [2]int{msg.X, msg.Y}
+	}
+	return m, nil
+}
+
+func (m *model) handleMouseRelease(msg tea.MouseReleaseMsg) (tea.Model, tea.Cmd) {
+	if msg.Button != tea.MouseLeft {
+		return m, nil
+	}
+	if m.selecting {
+		m.selecting = false
+		m.selectTo = [2]int{msg.X, msg.Y}
+		if text := m.extractSelectedText(); text != "" {
+			return m, copyToClipboard(text)
+		}
+	}
+	return m, nil
+}
+
+func (m *model) handlePaste(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
+	// Intercept bracketed paste: detect file paths for Blossom upload.
+	text := strings.TrimSpace(msg.Content)
+	if isFilePath(text) {
+		if len(m.cfg.BlossomServers) == 0 {
+			m.addSystemMsg("blossom_servers not configured")
+			return m, nil
+		}
+		m.addSystemMsg("uploading " + filepath.Base(text) + "...")
+		return m, blossomUploadCmd(m.cfg.BlossomServers, text, m.keys)
+	}
+	// Not a file path — forward to textarea so the paste lands in the input.
+	return m.handleInputUpdate(msg)
 }
 
 func (m *model) handleChannelCreated(msg channelCreatedMsg) (tea.Model, tea.Cmd) {
@@ -744,7 +772,7 @@ func (m *model) handleNIP51PublishResult(msg nip51PublishResultMsg) (tea.Model, 
 	return m, nil
 }
 
-func (m *model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *model) handleKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// Dismiss QR overlay on any key (except quit which still quits).
 	if m.qrOverlay != "" {
 		if key.Matches(msg, m.keymap.Quit) {
@@ -756,19 +784,6 @@ func (m *model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.qrOverlay = ""
 		return m, nil
-	}
-
-	// Intercept bracketed paste: detect file paths for Blossom upload.
-	if msg.Paste {
-		text := strings.TrimSpace(string(msg.Runes))
-		if isFilePath(text) {
-			if len(m.cfg.BlossomServers) == 0 {
-				m.addSystemMsg("blossom_servers not configured")
-				return m, nil
-			}
-			m.addSystemMsg("uploading " + filepath.Base(text) + "...")
-			return m, blossomUploadCmd(m.cfg.BlossomServers, text, m.keys)
-		}
 	}
 
 	// Autocomplete key handling — intercept before textarea.
@@ -852,10 +867,10 @@ func (m *model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		default:
 			// Add typed character to filter
-			if len(msg.Runes) == 1 {
-				r := msg.Runes[0]
+			if len(msg.Text) == 1 {
+				r := msg.Text[0]
 				if r >= 32 && r <= 126 { // printable ASCII
-					m.channelSelectorInput += string(r)
+					m.channelSelectorInput += msg.Text
 					m.channelSelectorIndex = 0
 					m.updateChannelSelectorItems()
 				}
@@ -985,7 +1000,7 @@ func (m *model) handleInputUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Pre-grow textarea before newline insertion so the internal viewport
 	// calculates its scroll offset with the correct height.
-	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+	if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
 		if s := keyMsg.String(); s == "alt+enter" || s == "ctrl+j" {
 			target := m.input.LineCount() + 1
 			if target > inputMaxHeight {

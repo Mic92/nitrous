@@ -1,8 +1,6 @@
 package main
 
 import (
-	"encoding/base64"
-	"strings"
 	"testing"
 	"unicode/utf8"
 )
@@ -130,59 +128,4 @@ func TestSliceByColumnsValidUTF8(t *testing.T) {
 			}
 		}
 	}
-}
-
-func TestOSC52Sequence(t *testing.T) {
-	t.Run("plain ASCII round-trips through base64", func(t *testing.T) {
-		input := "hello world"
-		seq := osc52Sequence(input)
-
-		// Expected exact format: ESC ] 52 ; c ; <base64> BEL
-		// We use BEL (\a) as the terminator rather than ST (ESC \)
-		// because it is a single byte and matches what
-		// charmbracelet/x/ansi emits — broadly compatible with
-		// xterm, kitty, iTerm2, alacritty, foot, wezterm.
-		wantPrefix := "\x1b]52;c;"
-		wantSuffix := "\a"
-
-		if !strings.HasPrefix(seq, wantPrefix) {
-			t.Fatalf("missing OSC 52 prefix: got %q", seq)
-		}
-		if !strings.HasSuffix(seq, wantSuffix) {
-			t.Fatalf("missing BEL terminator: got %q", seq)
-		}
-
-		payload := seq[len(wantPrefix) : len(seq)-len(wantSuffix)]
-		decoded, err := base64.StdEncoding.DecodeString(payload)
-		if err != nil {
-			t.Fatalf("payload is not valid base64: %v (payload=%q)", err, payload)
-		}
-		if string(decoded) != input {
-			t.Errorf("round-trip mismatch: got %q want %q", decoded, input)
-		}
-	})
-
-	t.Run("control bytes in input do not leak into the framing", func(t *testing.T) {
-		// BEL and ESC inside the text would terminate the OSC
-		// sequence early or start a new one if emitted raw.
-		input := "foo\abar\x1bbaz"
-		seq := osc52Sequence(input)
-
-		// Strip the single allowed ESC (prefix) and single BEL
-		// (terminator); the remainder must be pure base64.
-		inner := strings.TrimPrefix(seq, "\x1b]52;c;")
-		inner = strings.TrimSuffix(inner, "\a")
-
-		if strings.ContainsAny(inner, "\a\x1b") {
-			t.Errorf("raw control bytes leaked into payload: %q", inner)
-		}
-
-		decoded, err := base64.StdEncoding.DecodeString(inner)
-		if err != nil {
-			t.Fatalf("payload is not valid base64: %v", err)
-		}
-		if string(decoded) != input {
-			t.Errorf("round-trip mismatch: got %q want %q", decoded, input)
-		}
-	})
 }

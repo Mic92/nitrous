@@ -2,12 +2,11 @@ package main
 
 import (
 	"log"
-	"os"
 	"os/exec"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
 )
@@ -188,59 +187,56 @@ func stringColumnWidth(s string) int {
 }
 
 // copyToClipboard copies text to the system clipboard.
-// Tries wl-copy (Wayland), then xclip (X11), then OSC 52 escape sequence.
+// Fires both wl-copy/xclip/xsel (native) and tea.SetClipboard (OSC 52)
+// concurrently. The native call runs inside the returned Cmd so a hung
+// clipboard daemon cannot block Update(). OSC 52 is sent unconditionally
+// since it's idempotent; the native attempt is purely an optimization for
+// plain ssh sessions whose terminals lack OSC 52 support.
 func copyToClipboard(text string) tea.Cmd {
-	return func() tea.Msg {
-		// Try wl-copy first (Wayland).
-		if path, err := exec.LookPath("wl-copy"); err == nil {
-			cmd := exec.Command(path)
-			cmd.Stdin = strings.NewReader(text)
-			if err := cmd.Run(); err == nil {
-				log.Printf("clipboard: copied %d bytes via wl-copy", len(text))
-				return clipboardCopiedMsg{}
-			}
-		}
-
-		// Try xclip (X11).
-		if path, err := exec.LookPath("xclip"); err == nil {
-			cmd := exec.Command(path, "-selection", "clipboard")
-			cmd.Stdin = strings.NewReader(text)
-			if err := cmd.Run(); err == nil {
-				log.Printf("clipboard: copied %d bytes via xclip", len(text))
-				return clipboardCopiedMsg{}
-			}
-		}
-
-		// Try xsel (X11).
-		if path, err := exec.LookPath("xsel"); err == nil {
-			cmd := exec.Command(path, "--clipboard", "--input")
-			cmd.Stdin = strings.NewReader(text)
-			if err := cmd.Run(); err == nil {
-				log.Printf("clipboard: copied %d bytes via xsel", len(text))
-				return clipboardCopiedMsg{}
-			}
-		}
-
-		// Fallback: OSC 52 (terminal clipboard escape sequence).
-		//
-		// We write directly to os.Stdout because bubbletea v1 has
-		// no sanctioned way to emit raw OSC sequences: tea.Printf
-		// appends a newline and is suppressed under altscreen.
-		// Clipboard support landed in bubbletea v2 (beta).
-		// TODO: switch to tea.SetClipboard once we move to v2.
-		_, _ = os.Stdout.WriteString(osc52Sequence(text))
-		log.Printf("clipboard: sent %d bytes via OSC 52", len(text))
-		return clipboardCopiedMsg{}
-	}
+	log.Printf("clipboard: sending %d bytes via OSC 52 + native", len(text))
+	return tea.Batch(
+		func() tea.Msg {
+			tryNativeClipboard(text) // best-effort, async
+			return clipboardCopiedMsg{}
+		},
+		tea.SetClipboard(text),
+	)
 }
 
-// osc52Sequence builds an OSC 52 escape sequence for setting the
-// system clipboard. The payload is base64-encoded so that BEL, ESC
-// or non-ASCII bytes in text cannot terminate the sequence early or
-// confuse the terminal parser. Uses BEL as the terminator (broadly
-// compatible; matches charmbracelet/x/ansi).
-func osc52Sequence(text string) string {
-	return ansi.SetSystemClipboard(text)
+// tryNativeClipboard attempts to copy via wl-copy/xclip/xsel.
+// Returns true on success.
+func tryNativeClipboard(text string) bool {
+	// Try wl-copy first (Wayland).
+	if path, err := exec.LookPath("wl-copy"); err == nil {
+		cmd := exec.Command(path)
+		cmd.Stdin = strings.NewReader(text)
+		if err := cmd.Run(); err == nil {
+			log.Printf("clipboard: copied %d bytes via wl-copy", len(text))
+			return true
+		}
+	}
+
+	// Try xclip (X11).
+	if path, err := exec.LookPath("xclip"); err == nil {
+		cmd := exec.Command(path, "-selection", "clipboard")
+		cmd.Stdin = strings.NewReader(text)
+		if err := cmd.Run(); err == nil {
+			log.Printf("clipboard: copied %d bytes via xclip", len(text))
+			return true
+		}
+	}
+
+	// Try xsel (X11).
+	if path, err := exec.LookPath("xsel"); err == nil {
+		cmd := exec.Command(path, "--clipboard", "--input")
+		cmd.Stdin = strings.NewReader(text)
+		if err := cmd.Run(); err == nil {
+			log.Printf("clipboard: copied %d bytes via xsel", len(text))
+			return true
+		}
+	}
+
+	return false
 }
 
 type clipboardCopiedMsg struct{}

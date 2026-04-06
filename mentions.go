@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	"fiatjaf.com/nostr"
 	"fiatjaf.com/nostr/nip19"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // mentionPattern matches @username at word boundaries. The @ must be at the

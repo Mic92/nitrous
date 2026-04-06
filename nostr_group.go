@@ -11,10 +11,10 @@ import (
 	"sync"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"fiatjaf.com/nostr"
 	"fiatjaf.com/nostr/nip19"
 	"fiatjaf.com/nostr/nip29"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // --- NIP-29 Relay-Based Groups ---

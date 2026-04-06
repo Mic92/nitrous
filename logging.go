@@ -215,5 +215,3 @@ func parseLogLine(line string) (ChatMessage, error) {
 		Content:   unescapeContent(parts[4]),
 	}, nil
 }
-
-
